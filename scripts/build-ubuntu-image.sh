@@ -181,8 +181,8 @@ EOF
     rm -rf "${ROOTFS_DIR}/var/lib/apt/lists"/*
 
     echo "Creating ext4 image..."
-    # Create 1GB sparse image (will be resized per VM)
-    dd if=/dev/zero of="${ROOTFS}" bs=1M count=0 seek=1024 2>/dev/null
+    # Create 2GB sparse image (will be resized per VM)
+    dd if=/dev/zero of="${ROOTFS}" bs=1M count=0 seek=2048 2>/dev/null
     mkfs.ext4 -F -L rootfs "${ROOTFS}"
 
     # Mount and copy
