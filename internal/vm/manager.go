@@ -267,6 +267,7 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 
 	m.processes[vm.ID] = proc
 	log.Printf("Started VM %s with IP %s on %s", vm.ID, ipAddress, tapDevice)
+	log.Printf("Serial output for VM %s logged to: %s/vms/%s/serial.log", vm.ID, m.dataDir, vm.ID)
 
 	return ipAddress, tapDevice, nil
 }

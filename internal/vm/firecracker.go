@@ -19,6 +19,7 @@ type FirecrackerProcess struct {
 	Cmd        *exec.Cmd
 	SocketPath string
 	JailPath   string
+	SerialLog  *os.File
 	waitDone   chan struct{}
 	waitErr    error
 }
@@ -168,6 +169,10 @@ func (p *FirecrackerProcess) stop() error {
 		// Check if already exited
 		select {
 		case <-p.waitDone:
+			// Process already exited, just close the log
+			if p.SerialLog != nil {
+				p.SerialLog.Close()
+			}
 			return nil
 		default:
 		}
@@ -184,6 +189,11 @@ func (p *FirecrackerProcess) stop() error {
 			p.Cmd.Process.Kill()
 			<-p.waitDone
 		}
+	}
+
+	// Close serial log file
+	if p.SerialLog != nil {
+		p.SerialLog.Close()
 	}
 
 	return nil
@@ -238,6 +248,13 @@ func startFirecrackerDirect(vmID, firecrackerPath, dataDir string) (*Firecracker
 	// Remove existing socket
 	os.Remove(socketPath)
 
+	// Create serial log file (truncate if exists)
+	logPath := filepath.Join(dataDir, "vms", vmID, "serial.log")
+	serialLog, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("create serial log: %w", err)
+	}
+
 	cmd := exec.Command(firecrackerPath,
 		"--api-sock", socketPath,
 	)
@@ -246,7 +263,12 @@ func startFirecrackerDirect(vmID, firecrackerPath, dataDir string) (*Firecracker
 		Setsid: true, // Create new session
 	}
 
+	// Redirect serial output to log file
+	cmd.Stdout = serialLog
+	cmd.Stderr = serialLog
+
 	if err := cmd.Start(); err != nil {
+		serialLog.Close()
 		return nil, fmt.Errorf("start firecracker: %w", err)
 	}
 
@@ -255,6 +277,7 @@ func startFirecrackerDirect(vmID, firecrackerPath, dataDir string) (*Firecracker
 		Cmd:        cmd,
 		SocketPath: socketPath,
 		JailPath:   socketDir,
+		SerialLog:  serialLog,
 	}
 
 	// Start waiting for process exit in background
