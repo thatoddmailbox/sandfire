@@ -61,7 +61,7 @@ else
     mkdir -p "${ROOTFS_DIR}"
 
     echo "Running debootstrap (this may take a while)..."
-    debootstrap --arch=amd64 --variant=minbase --include=systemd,systemd-sysv,udev,iproute2,iputils-ping,openssh-server,sudo,curl,ca-certificates,passwd,busybox-static,python3 \
+    debootstrap --arch=amd64 --variant=minbase --include=systemd,systemd-sysv,udev,iproute2,iputils-ping,openssh-server,sudo,curl,ca-certificates,passwd,busybox-static,python3,htop \
         "${UBUNTU_VERSION}" "${ROOTFS_DIR}" http://archive.ubuntu.com/ubuntu/
 
     echo "Configuring rootfs..."
@@ -120,31 +120,6 @@ EOF
 
     # Enable SSH
     chroot "${ROOTFS_DIR}" systemctl enable ssh
-
-    # Set up init-entropy service (helps with SSH startup in VMs with limited entropy)
-    cat > "${ROOTFS_DIR}/etc/systemd/system/init-entropy.service" << 'EOF'
-[Unit]
-Description=Initialize entropy pool
-DefaultDependencies=no
-Before=ssh.service sshd.service sysinit.target
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -c 'if [ -c /dev/hwrng ]; then dd if=/dev/hwrng of=/dev/urandom bs=512 count=4 2>/dev/null; fi; python3 -c "import fcntl,os,struct; fd=os.open(\"/dev/random\",os.O_WRONLY); data=os.urandom(512); fcntl.ioctl(fd, 0x40085203, struct.pack(\"ii\", 4096, 512) + data)" 2>/dev/null || dd if=/dev/urandom of=/dev/random bs=512 count=8 iflag=fullblock 2>/dev/null; echo done'
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    chroot "${ROOTFS_DIR}" systemctl enable init-entropy.service
-
-    # Make SSH wait for entropy initialization
-    mkdir -p "${ROOTFS_DIR}/etc/systemd/system/ssh.service.d"
-    cat > "${ROOTFS_DIR}/etc/systemd/system/ssh.service.d/entropy.conf" << 'EOF'
-[Unit]
-After=init-entropy.service
-EOF
 
     # Set up busybox telnet server (alternative to SSH, works without entropy)
     # Note: busybox-static already installs /usr/bin/busybox, and with usrmerge
