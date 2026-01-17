@@ -28,6 +28,13 @@ func (m *Manager) SetAllocatedIPs(ips []string) {
 	}
 }
 
+// ClearAllocatedIPs removes all tracked IP allocations
+func (m *Manager) ClearAllocatedIPs() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allocatedIPs = make(map[string]bool)
+}
+
 func (m *Manager) AllocateIP() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -1,15 +1,21 @@
 package vm
 
 import (
+	"bufio"
 	"crypto/rand"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
 	"sandfire/internal/db"
 	"sandfire/internal/network"
-	"sync"
 )
 
 type Manager struct {
@@ -39,6 +45,150 @@ func NewManager(dataDir string, networkMgr *network.Manager) *Manager {
 		useJailer:       false, // Disable jailer for now (networking issues)
 		networkMgr:      networkMgr,
 		processes:       make(map[string]*FirecrackerProcess),
+	}
+}
+
+// CleanupOrphanedResources cleans up resources that may have been left behind
+// from a previous unclean shutdown (e.g., SIGKILL). This should be called
+// before attempting to restore VMs on startup.
+func (m *Manager) CleanupOrphanedResources() {
+	log.Println("Checking for orphaned resources from previous run...")
+
+	// 1. Kill orphaned firecracker processes
+	m.killOrphanedFirecrackerProcesses()
+
+	// 2. Clean up orphaned TAP devices
+	m.cleanOrphanedTapDevices()
+
+	// 3. Clean up orphaned socket directories
+	m.cleanOrphanedSocketDirs()
+
+	log.Println("Orphaned resource cleanup complete")
+}
+
+// killOrphanedFirecrackerProcesses finds and kills any firecracker processes
+// that are still running from a previous session
+func (m *Manager) killOrphanedFirecrackerProcesses() {
+	// Find all firecracker processes
+	cmd := exec.Command("pgrep", "-f", "firecracker")
+	output, err := cmd.Output()
+	if err != nil {
+		// pgrep exits with code 1 if no matches found, which is fine
+		return
+	}
+
+	pids := strings.Fields(string(output))
+	if len(pids) == 0 {
+		return
+	}
+
+	log.Printf("Found %d orphaned firecracker process(es), killing...", len(pids))
+
+	for _, pidStr := range pids {
+		pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
+		if err != nil {
+			continue
+		}
+
+		// Check if this process has our data directory in its command line
+		// to avoid killing unrelated firecracker processes
+		cmdlinePath := fmt.Sprintf("/proc/%d/cmdline", pid)
+		cmdline, err := os.ReadFile(cmdlinePath)
+		if err != nil {
+			continue
+		}
+
+		// Check if this firecracker process is using our data directory
+		if !strings.Contains(string(cmdline), m.dataDir) {
+			log.Printf("Skipping firecracker process %d (not ours)", pid)
+			continue
+		}
+
+		log.Printf("Killing orphaned firecracker process %d", pid)
+
+		// Send SIGTERM first
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+
+		proc.Signal(syscall.SIGTERM)
+
+		// Give it a second to exit gracefully
+		// We don't wait long since we're doing cleanup
+		time.Sleep(500 * time.Millisecond)
+
+		// Force kill if still running
+		if m.processExists(pid) {
+			log.Printf("Force killing firecracker process %d", pid)
+			proc.Kill()
+		}
+	}
+}
+
+// processExists checks if a process with the given PID is still running
+func (m *Manager) processExists(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// On Unix, FindProcess always succeeds, so we need to send signal 0
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+// cleanOrphanedTapDevices removes TAP devices that were created by sandfire
+// but not properly cleaned up
+func (m *Manager) cleanOrphanedTapDevices() {
+	// Get all interfaces attached to the sandfire bridge
+	cmd := exec.Command("ip", "link", "show", "master", "sandfire0")
+	output, err := cmd.Output()
+	if err != nil {
+		// Bridge might not exist yet
+		return
+	}
+
+	// Parse the output to find tap-* devices
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Look for lines like "4: tap-abc123@sandfire0: ..."
+		if strings.Contains(line, "tap-") {
+			// Extract device name
+			parts := strings.Fields(line)
+			if len(parts) < 2 {
+				continue
+			}
+			// Device name is in format "name:" or "name@master:"
+			devName := parts[1]
+			devName = strings.TrimSuffix(devName, ":")
+			if idx := strings.Index(devName, "@"); idx > 0 {
+				devName = devName[:idx]
+			}
+
+			if strings.HasPrefix(devName, "tap-") {
+				log.Printf("Cleaning up orphaned TAP device: %s", devName)
+				m.networkMgr.DeleteTap(devName)
+			}
+		}
+	}
+}
+
+// cleanOrphanedSocketDirs removes socket directories from previous runs
+func (m *Manager) cleanOrphanedSocketDirs() {
+	runDir := filepath.Join(m.dataDir, "run")
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		// run directory might not exist
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			socketDir := filepath.Join(runDir, entry.Name())
+			log.Printf("Cleaning up orphaned socket directory: %s", socketDir)
+			os.RemoveAll(socketDir)
+		}
 	}
 }
 

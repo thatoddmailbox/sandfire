@@ -250,3 +250,29 @@ func (db *DB) ClearWasRunning(id string) error {
 	}
 	return nil
 }
+
+// PrepareOrphanedVMsForRestart handles VMs that were left in 'running' state
+// after an unclean shutdown. It marks them for restart and clears their stale
+// network info so new IPs can be allocated.
+func (db *DB) PrepareOrphanedVMsForRestart() (int, error) {
+	// Find VMs that are in 'running' state - these were running when the server
+	// crashed since graceful shutdown would have set state='stopped'
+	result, err := db.Exec(`UPDATE vms SET was_running = 1, ip_address = NULL,
+		tap_device = NULL WHERE state = 'running'`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare orphaned vms: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	return int(rows), nil
+}
+
+// ClearStaleIPAllocations clears IP addresses from VMs that will be restarted
+// This allows them to get fresh IPs during restart
+func (db *DB) ClearStaleIPAllocations() error {
+	_, err := db.Exec(`UPDATE vms SET ip_address = NULL, tap_device = NULL
+		WHERE was_running = 1`)
+	if err != nil {
+		return fmt.Errorf("clear stale ip allocations: %w", err)
+	}
+	return nil
+}
