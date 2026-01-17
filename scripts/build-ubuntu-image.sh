@@ -4,13 +4,10 @@ set -e
 # Build Ubuntu 24.04 image for Firecracker
 # This script downloads and prepares a minimal Ubuntu rootfs and kernel
 
-#KERNEL_VERSION="6.1.155"
-#FIRECRACKER_CI_VERSION="v1.14"
-#KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${FIRECRACKER_CI_VERSION}/x86_64/vmlinux-${KERNEL_VERSION}"
-
-# Use the Firecracker quickstart kernel (4.14.174) which has better compatibility
-# with kernel command-line IP configuration
-KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin"
+# Use Firecracker CI kernel - Linux 6.1 with virtio-rng support
+KERNEL_VERSION="6.1.155"
+FIRECRACKER_CI_VERSION="v1.14"
+KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${FIRECRACKER_CI_VERSION}/x86_64/vmlinux-${KERNEL_VERSION}"
 UBUNTU_VERSION="noble"
 IMAGE_ID="ubuntu-24.04-2"
 IMAGE_NAME="Ubuntu 24.04"
