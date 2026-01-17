@@ -25,6 +25,7 @@ func NewServer(database *db.DB, vmManager *vm.Manager) *Server {
 }
 
 func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
 	s.mux.HandleFunc("GET /api/os-images", s.handleListOSImages)
