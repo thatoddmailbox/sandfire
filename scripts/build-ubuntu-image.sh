@@ -93,6 +93,7 @@ Name=eth0
 
 [Network]
 DHCP=no
+KeepConfiguration=yes
 EOF
 
     # Enable systemd-networkd

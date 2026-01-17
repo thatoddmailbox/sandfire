@@ -215,52 +215,6 @@ func (m *Manager) PrepareVMDisk(vmID string, img *db.OSImage) error {
 	return nil
 }
 
-// configureVMNetwork writes the network configuration to the VM's rootfs
-func (m *Manager) configureVMNetwork(vmID, ipAddress string) error {
-	vmRootfs := filepath.Join(m.dataDir, "vms", vmID, "rootfs.ext4")
-	mountPoint := filepath.Join(m.dataDir, "mnt", vmID)
-
-	// Create mount point
-	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return fmt.Errorf("create mount point: %w", err)
-	}
-
-	// Mount the rootfs
-	cmd := exec.Command("mount", vmRootfs, mountPoint)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("mount rootfs: %w", err)
-	}
-
-	// Ensure we unmount on exit
-	defer func() {
-		exec.Command("umount", mountPoint).Run()
-		os.Remove(mountPoint)
-	}()
-
-	// Write systemd-networkd configuration
-	networkDir := filepath.Join(mountPoint, "etc", "systemd", "network")
-	if err := os.MkdirAll(networkDir, 0755); err != nil {
-		return fmt.Errorf("create network dir: %w", err)
-	}
-
-	networkConfig := fmt.Sprintf(`[Match]
-Name=eth0
-
-[Network]
-Address=%s/24
-Gateway=10.20.30.1
-DNS=8.8.8.8
-`, ipAddress)
-
-	configPath := filepath.Join(networkDir, "20-eth0.network")
-	if err := os.WriteFile(configPath, []byte(networkConfig), 0644); err != nil {
-		return fmt.Errorf("write network config: %w", err)
-	}
-
-	log.Printf("Configured network for VM %s with IP %s", vmID, ipAddress)
-	return nil
-}
-
 func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -289,13 +243,6 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 			m.networkMgr.ReleaseIP(ipAddress)
 			return "", "", fmt.Errorf("enable NAT: %w", err)
 		}
-	}
-
-	// Configure network in VM's rootfs with allocated IP
-	if err := m.configureVMNetwork(vm.ID, ipAddress); err != nil {
-		m.networkMgr.DeleteTap(tapDevice)
-		m.networkMgr.ReleaseIP(ipAddress)
-		return "", "", fmt.Errorf("configure VM network: %w", err)
 	}
 
 	// Paths for kernel and rootfs
