@@ -28,6 +28,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
+	s.mux.HandleFunc("GET /api/caddy/check-domain", s.handleCaddyCheckDomain)
+
 	s.mux.HandleFunc("GET /api/os-images", s.handleListOSImages)
 
 	s.mux.HandleFunc("GET /api/vms", s.handleListVMs)
@@ -41,6 +43,24 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wrapped := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+	// Check if this is a VM subdomain request
+	vmID, err := s.isVMSubdomain(r)
+	if err != nil {
+		// Invalid subdomain pattern (e.g., too many levels)
+		log.Printf("%s %s %s -> invalid subdomain: %v", r.Method, r.Host, r.URL.Path, err)
+		http.Error(wrapped, "Invalid subdomain", http.StatusBadRequest)
+		return
+	}
+
+	if vmID != "" {
+		// This is a VM subdomain - proxy to the VM
+		s.handleVMProxy(wrapped, r, vmID)
+		log.Printf("%s %s%s %d (proxy to %s)", r.Method, r.Host, r.URL.Path, wrapped.statusCode, vmID)
+		return
+	}
+
+	// Normal routing for base domain / localhost / API requests
 	s.mux.ServeHTTP(wrapped, r)
 	log.Printf("%s %s %d", r.Method, r.URL.Path, wrapped.statusCode)
 }
