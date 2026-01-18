@@ -1,4 +1,5 @@
 data/
-sandfire
+/sandfire
 future-work.md
 prompt.md
+envfile
