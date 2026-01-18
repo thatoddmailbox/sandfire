@@ -143,7 +143,7 @@ func (b *Builder) buildBaseLayer(layer *Layer, workDir string) error {
 	cmd := exec.Command("debootstrap",
 		"--arch=amd64",
 		"--variant=minbase",
-		"--include=systemd,systemd-sysv,udev,iproute2,iputils-ping,openssh-server,sudo,curl,ca-certificates,passwd,busybox-static,python3,htop",
+		"--include=systemd,systemd-sysv,udev,iproute2,iputils-ping,openssh-server,sudo,curl,ca-certificates,passwd,busybox-static,python3,htop,nano",
 		"noble",
 		rootfsDir,
 		"http://archive.ubuntu.com/ubuntu/",
