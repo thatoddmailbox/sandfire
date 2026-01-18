@@ -354,6 +354,14 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 		return "", "", fmt.Errorf("configure VM: %w", err)
 	}
 
+	// Configure MMDS with VM metadata (network interface ID is "eth0")
+	if err := proc.configureMMDS("eth0", vm.ID, vm.Name); err != nil {
+		proc.stop()
+		m.networkMgr.DeleteTap(tapDevice)
+		m.networkMgr.ReleaseIP(ipAddress)
+		return "", "", fmt.Errorf("configure MMDS: %w", err)
+	}
+
 	// Start the VM
 	if err := proc.start(); err != nil {
 		proc.stop()

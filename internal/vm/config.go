@@ -32,6 +32,24 @@ type NetworkInterface struct {
 	HostDevName string `json:"host_dev_name"`
 }
 
+// MMDSConfig configures the Microvm Metadata Service
+type MMDSConfig struct {
+	NetworkInterfaces []string `json:"network_interfaces"`
+	Version           string   `json:"version,omitempty"`
+	IPv4Address       string   `json:"ipv4_address,omitempty"`
+}
+
+// MMDSMetadata is the metadata structure stored in MMDS
+type MMDSMetadata struct {
+	Sandfire SandfireMetadata `json:"sandfire"`
+}
+
+// SandfireMetadata contains Sandfire-specific VM metadata
+type SandfireMetadata struct {
+	VMID   string `json:"vm_id"`
+	VMName string `json:"vm_name"`
+}
+
 func NewFirecrackerConfig(kernelPath, rootfsPath string, vcpuCount, ramMB int, tapDevice, guestMAC, guestIP string) *FirecrackerConfig {
 	bootArgs := "console=ttyS0 reboot=k panic=1 pci=off random.trust_cpu=on random.trust_bootloader=on net.ifnames=0 biosdevname=0"
 	if guestIP != "" {
