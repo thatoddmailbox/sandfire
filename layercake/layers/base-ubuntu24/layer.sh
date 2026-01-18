@@ -82,5 +82,65 @@ ExecStart=-/sbin/agetty -o '-p -f -- \\u' --keep-baud 115200,38400,9600 --autolo
 EOF
 systemctl enable serial-getty@ttyS0.service
 
+# Set up MMDS route and MOTD update script
+cat > /usr/local/bin/sandfire-mmds-motd.sh << 'SCRIPT'
+#!/bin/bash
+# Fetch VM metadata from Firecracker MMDS and update MOTD
+# This runs once at boot since VM name/ID don't change
+
+MMDS_IP="169.254.169.254"
+MMDS_IFACE="eth0"
+
+# Add route to MMDS (link-local address needs explicit route)
+ip route add ${MMDS_IP}/32 dev ${MMDS_IFACE} 2>/dev/null || true
+
+# Get MMDS V2 token (valid for 300 seconds, more than enough for this)
+TOKEN=$(curl -s -X PUT "http://${MMDS_IP}/latest/api/token" \
+    -H "X-metadata-token-ttl-seconds: 300" 2>/dev/null)
+
+if [ -z "$TOKEN" ]; then
+    echo "Warning: Could not get MMDS token" >&2
+    exit 0
+fi
+
+# Fetch VM metadata
+METADATA=$(curl -s "http://${MMDS_IP}/sandfire" \
+    -H "X-metadata-token: ${TOKEN}" \
+    -H "Accept: application/json" 2>/dev/null)
+
+if [ -z "$METADATA" ]; then
+    echo "Warning: Could not fetch MMDS metadata" >&2
+    exit 0
+fi
+
+# Parse VM name and ID using Python (available in base image)
+VM_NAME=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('vm_name',''))" 2>/dev/null)
+VM_ID=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('vm_id',''))" 2>/dev/null)
+
+# Update MOTD with VM information
+cat > /etc/motd << EOF
+This is ${VM_NAME:-unknown} (${VM_ID:-unknown}).
+
+EOF
+SCRIPT
+chmod +x /usr/local/bin/sandfire-mmds-motd.sh
+
+# Create systemd service to run MMDS MOTD script at boot
+cat > /etc/systemd/system/sandfire-mmds-motd.service << 'EOF'
+[Unit]
+Description=Fetch Sandfire VM metadata and update MOTD
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sandfire-mmds-motd.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable sandfire-mmds-motd.service
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
