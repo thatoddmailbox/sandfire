@@ -85,11 +85,11 @@ func LoadLayer(dir string) (*Layer, error) {
 	return layer, nil
 }
 
-// LoadAllLayers loads all layers from the images directory
-func LoadAllLayers(imagesDir string) ([]*Layer, error) {
-	entries, err := os.ReadDir(imagesDir)
+// LoadAllLayers loads all layers from the layers directory
+func LoadAllLayers(layersDir string) ([]*Layer, error) {
+	entries, err := os.ReadDir(layersDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read images directory: %w", err)
+		return nil, fmt.Errorf("failed to read layers directory: %w", err)
 	}
 
 	var layers []*Layer
@@ -98,7 +98,7 @@ func LoadAllLayers(imagesDir string) ([]*Layer, error) {
 			continue
 		}
 
-		dir := filepath.Join(imagesDir, entry.Name())
+		dir := filepath.Join(layersDir, entry.Name())
 		confPath := filepath.Join(dir, "layer.conf")
 		if _, err := os.Stat(confPath); os.IsNotExist(err) {
 			continue

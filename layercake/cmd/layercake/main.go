@@ -11,15 +11,15 @@ import (
 )
 
 var (
-	imagesDir string
+	layersDir string
 	verbose   bool
 )
 
 func main() {
-	// Find images directory relative to executable or current directory
-	defaultImagesDir := findImagesDir()
+	// Find layers directory relative to executable or current directory
+	defaultLayersDir := findLayersDir()
 
-	flag.StringVar(&imagesDir, "images", defaultImagesDir, "Path to images directory")
+	flag.StringVar(&layersDir, "layers", defaultLayersDir, "Path to layers directory")
 	flag.BoolVar(&verbose, "v", false, "Verbose output")
 
 	flag.Usage = func() {
@@ -49,23 +49,23 @@ func main() {
 	}
 }
 
-func findImagesDir() string {
+func findLayersDir() string {
 	// Try relative to executable
 	exe, err := os.Executable()
 	if err == nil {
-		dir := filepath.Join(filepath.Dir(exe), "..", "images")
+		dir := filepath.Join(filepath.Dir(exe), "..", "layers")
 		if _, err := os.Stat(dir); err == nil {
 			return dir
 		}
 	}
 
 	// Try relative to current directory
-	if _, err := os.Stat("images"); err == nil {
-		return "images"
+	if _, err := os.Stat("layers"); err == nil {
+		return "layers"
 	}
 
 	// Default
-	return "./images"
+	return "./layers"
 }
 
 func run(cmd string, args []string) error {
@@ -84,18 +84,18 @@ func run(cmd string, args []string) error {
 }
 
 func loadGraph() (*layercake.LayerGraph, error) {
-	absImagesDir, err := filepath.Abs(imagesDir)
+	absLayersDir, err := filepath.Abs(layersDir)
 	if err != nil {
 		return nil, err
 	}
 
-	layers, err := layercake.LoadAllLayers(absImagesDir)
+	layers, err := layercake.LoadAllLayers(absLayersDir)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(layers) == 0 {
-		return nil, fmt.Errorf("no layers found in %s", absImagesDir)
+		return nil, fmt.Errorf("no layers found in %s", absLayersDir)
 	}
 
 	return layercake.NewLayerGraph(layers)
