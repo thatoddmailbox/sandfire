@@ -262,7 +262,7 @@ const indexHTML = `<!DOCTYPE html>
                 const osImage = osImageMap[vm.os_image_id] || vm.os_image_id;
 
                 html += '<tr data-id="' + escapeHtml(vm.id) + '">';
-                html += '<td><strong>' + escapeHtml(vm.name) + '</strong><br><small style="color:#999">' + escapeHtml(vm.id) + '</small></td>';
+                html += '<td><strong>' + escapeHtml(vm.name) + '</strong><br><small style="color:#999"><a href="https://' + escapeHtml(vm.id) + '.sand.studer.dev" target="_blank" style="color:#999;text-decoration:none">' + escapeHtml(vm.id) + '</a></small></td>';
                 html += '<td><span class="state ' + stateClass + '">' + escapeHtml(vm.state) + '</span></td>';
                 html += '<td>' + ip + '</td>';
                 html += '<td><span class="vm-specs">' + escapeHtml(osImage) + '</span></td>';
@@ -271,7 +271,7 @@ const indexHTML = `<!DOCTYPE html>
 
                 if (vm.state === 'running') {
                     html += '<button class="btn btn-stop" onclick="stopVM(\'' + vm.id + '\')">Stop</button>';
-                } else if (vm.state === 'stopped') {
+                } else if (vm.state === 'stopped' || vm.state === 'error') {
                     html += '<button class="btn btn-start" onclick="startVM(\'' + vm.id + '\')">Start</button>';
                     html += '<button class="btn btn-delete" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
                 }
