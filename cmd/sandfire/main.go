@@ -12,6 +12,7 @@ import (
 
 	"sandfire/internal/api"
 	"sandfire/internal/certs"
+	"sandfire/internal/config"
 	"sandfire/internal/db"
 	"sandfire/internal/network"
 	"sandfire/internal/storage"
@@ -32,6 +33,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to resolve data directory: %v", err)
 	}
+
+	// Load environment variables from envfile (if present)
+	config.LoadEnvFile(dataDir)
 
 	// Initialize storage
 	diskMgr := storage.NewDiskManager(dataDir)

@@ -52,7 +52,32 @@ sudo chmod 755 /usr/local/bin/sandfire
 sudo mkdir -p /var/lib/sandfire/data
 ```
 
-### 4. Set Up Networking
+### 4. Create Environment File (Optional but Recommended)
+
+Sandfire uses an environment file for configuration, similar to Caddy. Create the envfile:
+
+```bash
+sudo tee /var/lib/sandfire/envfile << 'EOF'
+# Sandfire environment configuration
+# This file contains secrets - do not commit to version control!
+
+# Cloudflare API token for DNS-01 ACME challenges (required for certificate management)
+CLOUDFLARE_API_TOKEN=your-token-here
+
+# Base domain for VM subdomains
+SANDFIRE_DOMAIN=sand.example.com
+
+# Set to 1 to use Let's Encrypt staging environment (for testing)
+#SANDFIRE_ACME_STAGING=1
+EOF
+
+# Secure the file (contains secrets)
+sudo chmod 600 /var/lib/sandfire/envfile
+```
+
+If no envfile is present, Sandfire will log a warning but continue running with default values.
+
+### 5. Set Up Networking
 
 Run the network setup script to create the bridge interface and NAT rules:
 
@@ -60,7 +85,7 @@ Run the network setup script to create the bridge interface and NAT rules:
 sudo ./scripts/setup-network.sh
 ```
 
-### 5. Build and Register an OS Image (Optional)
+### 6. Build and Register an OS Image (Optional)
 
 If you haven't already built an OS image:
 
@@ -79,7 +104,7 @@ sudo sqlite3 /var/lib/sandfire/data/sandfire.db \
     '/var/lib/sandfire/data/images/ubuntu-24.04/rootfs.ext4');"
 ```
 
-### 6. Install the systemd Service
+### 7. Install the systemd Service
 
 Create the systemd unit file:
 
@@ -101,6 +126,10 @@ RestartSec=5
 User=root
 Group=root
 
+# Environment file for secrets and configuration
+# The dash prefix means the service won't fail if the file doesn't exist
+EnvironmentFile=-/var/lib/sandfire/envfile
+
 # Logging
 StandardOutput=journal
 StandardError=journal
@@ -111,7 +140,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### 7. Enable and Start the Service
+### 8. Enable and Start the Service
 
 ```bash
 # Reload systemd to pick up the new service
