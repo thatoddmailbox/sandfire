@@ -4,21 +4,24 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sandfire/internal/certs"
 	"sandfire/internal/db"
 	"sandfire/internal/vm"
 )
 
 type Server struct {
-	db        *db.DB
-	vmManager *vm.Manager
-	mux       *http.ServeMux
+	db          *db.DB
+	vmManager   *vm.Manager
+	certManager *certs.Manager
+	mux         *http.ServeMux
 }
 
-func NewServer(database *db.DB, vmManager *vm.Manager) *Server {
+func NewServer(database *db.DB, vmManager *vm.Manager, certManager *certs.Manager) *Server {
 	s := &Server{
-		db:        database,
-		vmManager: vmManager,
-		mux:       http.NewServeMux(),
+		db:          database,
+		vmManager:   vmManager,
+		certManager: certManager,
+		mux:         http.NewServeMux(),
 	}
 	s.registerRoutes()
 	return s
@@ -29,6 +32,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
 	s.mux.HandleFunc("GET /api/caddy/check-domain", s.handleCaddyCheckDomain)
+	s.mux.HandleFunc("GET /api/caddy/get-certificate", s.handleCaddyGetCertificate)
 
 	s.mux.HandleFunc("GET /api/os-images", s.handleListOSImages)
 

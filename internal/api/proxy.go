@@ -77,6 +77,70 @@ func extractVMID(host string) (string, error) {
 	return vmID, nil
 }
 
+// handleCaddyGetCertificate handles GET /api/caddy/get-certificate
+// This is called by Caddy's get_certificate HTTP module to fetch certificates.
+// The domain parameter should be a VM subdomain like "vm-abc12345.sand.studer.dev"
+// or "app.vm-abc12345.sand.studer.dev".
+// Returns PEM-encoded certificate chain and private key concatenated.
+func (s *Server) handleCaddyGetCertificate(w http.ResponseWriter, r *http.Request) {
+	if s.certManager == nil {
+		log.Printf("get-certificate: certificate manager not initialized")
+		http.Error(w, "certificate manager not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Caddy sends server_name query param, but we also support domain for testing
+	domain := r.URL.Query().Get("server_name")
+	if domain == "" {
+		domain = r.URL.Query().Get("domain")
+	}
+	if domain == "" {
+		http.Error(w, "missing server_name parameter", http.StatusBadRequest)
+		return
+	}
+
+	vmID, err := extractVMID(domain)
+	if err != nil {
+		log.Printf("get-certificate: rejecting %q: %v", domain, err)
+		http.Error(w, "invalid domain", http.StatusBadRequest)
+		return
+	}
+
+	// Base domain certificates should be handled differently (or not at all by us)
+	if vmID == "" {
+		log.Printf("get-certificate: rejecting base domain %q (should use static cert)", domain)
+		http.Error(w, "base domain not supported", http.StatusBadRequest)
+		return
+	}
+
+	// Check if VM exists
+	vm, err := s.db.GetVM(vmID)
+	if err != nil {
+		log.Printf("get-certificate: database error for %q: %v", domain, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if vm == nil {
+		log.Printf("get-certificate: rejecting %q: VM %s not found", domain, vmID)
+		http.Error(w, "VM not found", http.StatusNotFound)
+		return
+	}
+
+	// Get or issue certificate
+	ctx := r.Context()
+	certData, err := s.certManager.GetCertificate(ctx, vmID)
+	if err != nil {
+		log.Printf("get-certificate: failed to get certificate for %q: %v", domain, err)
+		http.Error(w, "failed to get certificate", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("get-certificate: serving certificate for %q (VM %s)", domain, vmID)
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.Write(certData)
+}
+
 // handleCaddyCheckDomain handles GET /api/caddy/check-domain
 // This is called by Caddy's on_demand_tls to validate domain requests.
 // Returns 200 if the domain should get a certificate, 403 otherwise.
