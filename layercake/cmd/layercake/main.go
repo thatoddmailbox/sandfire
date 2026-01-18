@@ -11,15 +11,17 @@ import (
 )
 
 var (
-	layersDir string
-	verbose   bool
+	layersDir      string
+	layersLocalDir string
+	verbose        bool
 )
 
 func main() {
-	// Find layers directory relative to executable or current directory
-	defaultLayersDir := findLayersDir()
+	// Find layers directories relative to executable or current directory
+	defaultLayersDir, defaultLayersLocalDir := findLayersDirs()
 
 	flag.StringVar(&layersDir, "layers", defaultLayersDir, "Path to layers directory")
+	flag.StringVar(&layersLocalDir, "layers-local", defaultLayersLocalDir, "Path to local layers directory (overrides layers)")
 	flag.BoolVar(&verbose, "v", false, "Verbose output")
 
 	flag.Usage = func() {
@@ -49,23 +51,25 @@ func main() {
 	}
 }
 
-func findLayersDir() string {
+func findLayersDirs() (string, string) {
 	// Try relative to executable
 	exe, err := os.Executable()
 	if err == nil {
-		dir := filepath.Join(filepath.Dir(exe), "..", "layers")
-		if _, err := os.Stat(dir); err == nil {
-			return dir
+		exeDir := filepath.Dir(exe)
+		layersDir := filepath.Join(exeDir, "..", "layers")
+		if _, err := os.Stat(layersDir); err == nil {
+			layersLocalDir := filepath.Join(exeDir, "..", "layers-local")
+			return layersDir, layersLocalDir
 		}
 	}
 
 	// Try relative to current directory
 	if _, err := os.Stat("layers"); err == nil {
-		return "layers"
+		return "layers", "layers-local"
 	}
 
 	// Default
-	return "./layers"
+	return "./layers", "./layers-local"
 }
 
 func run(cmd string, args []string) error {
@@ -89,13 +93,19 @@ func loadGraph() (*layercake.LayerGraph, error) {
 		return nil, err
 	}
 
-	layers, err := layercake.LoadAllLayers(absLayersDir)
+	absLayersLocalDir, err := filepath.Abs(layersLocalDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load from both directories, with layers-local overriding layers
+	layers, err := layercake.LoadAllLayers(absLayersDir, absLayersLocalDir)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(layers) == 0 {
-		return nil, fmt.Errorf("no layers found in %s", absLayersDir)
+		return nil, fmt.Errorf("no layers found in %s or %s", absLayersDir, absLayersLocalDir)
 	}
 
 	return layercake.NewLayerGraph(layers)

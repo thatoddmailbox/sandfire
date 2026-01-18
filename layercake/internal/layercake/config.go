@@ -85,35 +85,53 @@ func LoadLayer(dir string) (*Layer, error) {
 	return layer, nil
 }
 
-// LoadAllLayers loads all layers from the layers directory
-func LoadAllLayers(layersDir string) ([]*Layer, error) {
-	entries, err := os.ReadDir(layersDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read layers directory: %w", err)
+// LoadAllLayers loads all layers from the given directories.
+// Directories are processed in order, with later directories overriding
+// layers with the same ID from earlier directories.
+// This allows layers-local to override layers from the main layers folder.
+func LoadAllLayers(layersDirs ...string) ([]*Layer, error) {
+	layerMap := make(map[string]*Layer)
+
+	for _, layersDir := range layersDirs {
+		// Skip directories that don't exist
+		if _, err := os.Stat(layersDir); os.IsNotExist(err) {
+			continue
+		}
+
+		entries, err := os.ReadDir(layersDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read layers directory %s: %w", layersDir, err)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			dir := filepath.Join(layersDir, entry.Name())
+			confPath := filepath.Join(dir, "layer.conf")
+			if _, err := os.Stat(confPath); os.IsNotExist(err) {
+				continue
+			}
+
+			layer, err := LoadLayer(dir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load layer %s: %w", entry.Name(), err)
+			}
+
+			// Verify directory name matches ID
+			if entry.Name() != layer.ID {
+				return nil, fmt.Errorf("layer directory name %q does not match ID %q", entry.Name(), layer.ID)
+			}
+
+			// Later directories override earlier ones
+			layerMap[layer.ID] = layer
+		}
 	}
 
+	// Convert map to slice
 	var layers []*Layer
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		dir := filepath.Join(layersDir, entry.Name())
-		confPath := filepath.Join(dir, "layer.conf")
-		if _, err := os.Stat(confPath); os.IsNotExist(err) {
-			continue
-		}
-
-		layer, err := LoadLayer(dir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load layer %s: %w", entry.Name(), err)
-		}
-
-		// Verify directory name matches ID
-		if entry.Name() != layer.ID {
-			return nil, fmt.Errorf("layer directory name %q does not match ID %q", entry.Name(), layer.ID)
-		}
-
+	for _, layer := range layerMap {
 		layers = append(layers, layer)
 	}
 
