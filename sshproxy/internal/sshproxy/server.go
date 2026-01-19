@@ -30,7 +30,7 @@ type ptyRequestMsg struct {
 	Rows     uint32
 	Width    uint32
 	Height   uint32
-	Modelist string
+	Modes    ssh.TerminalModes
 }
 
 // Server is the SSH proxy server
@@ -227,8 +227,43 @@ func parsePtyRequest(payload []byte) *ptyRequestMsg {
 	msg.Rows = binary.BigEndian.Uint32(payload[offset+4 : offset+8])
 	msg.Width = binary.BigEndian.Uint32(payload[offset+8 : offset+12])
 	msg.Height = binary.BigEndian.Uint32(payload[offset+12 : offset+16])
+	offset += 16
+
+	// Parse terminal modes (length-prefixed, then encoded mode pairs)
+	if len(payload) >= int(offset+4) {
+		modesLen := binary.BigEndian.Uint32(payload[offset : offset+4])
+		offset += 4
+		if len(payload) >= int(offset)+int(modesLen) {
+			msg.Modes = parseTerminalModes(payload[offset : offset+modesLen])
+		}
+	}
+
+	// If no modes were parsed, use sensible defaults
+	if msg.Modes == nil {
+		msg.Modes = ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}
+	}
 
 	return msg
+}
+
+// parseTerminalModes decodes SSH terminal modes from the encoded format.
+// Format: repeated (opcode uint8, value uint32) pairs, terminated by opcode 0.
+func parseTerminalModes(data []byte) ssh.TerminalModes {
+	modes := make(ssh.TerminalModes)
+	for len(data) >= 5 {
+		opcode := data[0]
+		if opcode == 0 { // TTY_OP_END
+			break
+		}
+		value := binary.BigEndian.Uint32(data[1:5])
+		modes[opcode] = value
+		data = data[5:]
+	}
+	return modes
 }
 
 func (s *Server) handleInteractiveShell(channel ssh.Channel, ptyReq *ptyRequestMsg, requests <-chan *ssh.Request) {
@@ -494,6 +529,7 @@ func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *p
 	term := "xterm-256color"
 	rows := 24
 	cols := 80
+	var modes ssh.TerminalModes
 	if ptyReq != nil {
 		if ptyReq.Term != "" {
 			term = ptyReq.Term
@@ -504,13 +540,16 @@ func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *p
 		if ptyReq.Columns > 0 {
 			cols = int(ptyReq.Columns)
 		}
+		modes = ptyReq.Modes
 	}
 
-	// Request a PTY with proper terminal modes
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
+	// Use default modes if none provided
+	if modes == nil {
+		modes = ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}
 	}
 
 	if err := session.RequestPty(term, rows, cols, modes); err != nil {
@@ -636,6 +675,7 @@ func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequest
 	term := "xterm-256color"
 	rows := 24
 	cols := 80
+	var modes ssh.TerminalModes
 	if ptyReq != nil {
 		if ptyReq.Term != "" {
 			term = ptyReq.Term
@@ -646,13 +686,16 @@ func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequest
 		if ptyReq.Columns > 0 {
 			cols = int(ptyReq.Columns)
 		}
+		modes = ptyReq.Modes
 	}
 
-	// Request a PTY with proper terminal modes
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
+	// Use default modes if none provided
+	if modes == nil {
+		modes = ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}
 	}
 
 	if err := session.RequestPty(term, rows, cols, modes); err != nil {
