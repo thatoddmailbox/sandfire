@@ -88,7 +88,36 @@ const indexHTML = `<!DOCTYPE html>
         .btn-delete { background: #6b7280; color: #fff; }
         .btn-create { background: #d4470a; color: #fff; padding: 10px 20px; }
         .btn-copy { background: #3b82f6; color: #fff; }
+        .btn-more { background: #6b7280; color: #fff; padding: 6px 10px; }
         .actions { display: flex; gap: 8px; align-items: center; }
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #fff;
+            min-width: 140px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border-radius: 4px;
+            z-index: 100;
+            overflow: hidden;
+        }
+        .dropdown-content.show { display: block; }
+        .dropdown-item {
+            display: block;
+            width: 100%;
+            padding: 10px 14px;
+            border: none;
+            background: none;
+            text-align: left;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: #333;
+        }
+        .dropdown-item:hover { background: #f5f5f5; }
+        .dropdown-item.danger { color: #dc2626; }
+        .dropdown-item.danger:hover { background: #fee2e2; }
         .form-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -275,7 +304,12 @@ const indexHTML = `<!DOCTYPE html>
                     html += '<button class="btn btn-stop" onclick="stopVM(\'' + vm.id + '\')">Stop</button>';
                 } else if (vm.state === 'stopped' || vm.state === 'error') {
                     html += '<button class="btn btn-start" onclick="startVM(\'' + vm.id + '\')">Start</button>';
-                    html += '<button class="btn btn-delete" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
+                    html += '<div class="dropdown">';
+                    html += '<button class="btn btn-more" onclick="toggleDropdown(event, \'' + vm.id + '\')">More</button>';
+                    html += '<div id="dropdown-' + vm.id + '" class="dropdown-content">';
+                    html += '<button class="dropdown-item danger" onclick="resetVMDisk(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Reset Disk</button>';
+                    html += '<button class="dropdown-item danger" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
+                    html += '</div></div>';
                 }
 
                 html += '</div></td></tr>';
@@ -308,6 +342,7 @@ const indexHTML = `<!DOCTYPE html>
         }
 
         async function deleteVM(id, name) {
+            closeAllDropdowns();
             if (!confirm('Delete VM "' + name + '"? This cannot be undone.')) return;
             try {
                 setLoading(id, true);
@@ -318,6 +353,36 @@ const indexHTML = `<!DOCTYPE html>
                 setLoading(id, false);
             }
         }
+
+        async function resetVMDisk(id, name) {
+            closeAllDropdowns();
+            if (!confirm('Reset disk for VM "' + name + '"? This will replace the disk with a fresh copy of the OS image. All data on the disk will be lost. This cannot be undone.')) return;
+            try {
+                setLoading(id, true);
+                await fetchJSON(API + '/vms/' + id + '/reset-disk', { method: 'POST' });
+                await loadVMs();
+            } catch (e) {
+                showError('Failed to reset VM disk: ' + e.message);
+                setLoading(id, false);
+            }
+        }
+
+        function toggleDropdown(event, vmId) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('dropdown-' + vmId);
+            const wasOpen = dropdown.classList.contains('show');
+            closeAllDropdowns();
+            if (!wasOpen) {
+                dropdown.classList.add('show');
+            }
+        }
+
+        function closeAllDropdowns() {
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', closeAllDropdowns);
 
         function setLoading(id, loading) {
             const row = document.querySelector('tr[data-id="' + id + '"]');
