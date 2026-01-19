@@ -1,11 +1,16 @@
 package sshproxy
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +52,7 @@ func NewServer(hostKey ssh.Signer, apiClient *APIClient, listenAddr string) *Ser
 // Start starts the SSH server
 func (s *Server) Start() error {
 	config := &ssh.ServerConfig{
-		NoClientAuth: true,
+		PublicKeyCallback: s.authenticatePublicKey,
 	}
 	config.AddHostKey(s.hostKey)
 
@@ -68,6 +73,61 @@ func (s *Server) Start() error {
 
 		go s.handleConnection(conn, config)
 	}
+}
+
+// authenticatePublicKey validates the user's public key against their ~/.ssh/authorized_keys
+func (s *Server) authenticatePublicKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	username := conn.User()
+
+	// Look up the system user
+	u, err := user.Lookup(username)
+	if err != nil {
+		log.Printf("Auth failed for %s: user not found", username)
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// Read their authorized_keys file
+	authKeysPath := filepath.Join(u.HomeDir, ".ssh", "authorized_keys")
+	authKeysFile, err := os.Open(authKeysPath)
+	if err != nil {
+		log.Printf("Auth failed for %s: cannot read authorized_keys: %v", username, err)
+		return nil, fmt.Errorf("cannot read authorized_keys")
+	}
+	defer authKeysFile.Close()
+
+	// Get the marshaled form of the presented key for comparison
+	presentedKey := key.Marshal()
+
+	// Scan through authorized_keys line by line
+	scanner := bufio.NewScanner(authKeysFile)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+
+		// Skip empty lines and comments
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+
+		// Parse the authorized key
+		authorizedKey, _, _, _, err := ssh.ParseAuthorizedKey(line)
+		if err != nil {
+			// Skip malformed lines
+			continue
+		}
+
+		// Compare the keys
+		if bytes.Equal(authorizedKey.Marshal(), presentedKey) {
+			log.Printf("Auth successful for %s from %s", username, conn.RemoteAddr())
+			return &ssh.Permissions{
+				Extensions: map[string]string{
+					"username": username,
+				},
+			}, nil
+		}
+	}
+
+	log.Printf("Auth failed for %s: no matching key found", username)
+	return nil, fmt.Errorf("no matching key found")
 }
 
 func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
