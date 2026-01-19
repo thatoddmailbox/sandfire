@@ -119,6 +119,7 @@ VM_ID=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); 
 
 # Update MOTD with VM information
 cat > /etc/motd << EOF
+
 This is ${VM_NAME:-unknown} (${VM_ID:-unknown}).
 
 EOF
