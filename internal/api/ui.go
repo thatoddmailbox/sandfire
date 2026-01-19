@@ -163,6 +163,39 @@ const indexHTML = `<!DOCTYPE html>
             font-size: 0.85em;
         }
         .loading { opacity: 0.5; }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 400px;
+            max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal h3 {
+            color: #d4470a;
+            margin-bottom: 15px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .btn-cancel { background: #6b7280; color: #fff; }
+        .btn-save { background: #d4470a; color: #fff; }
     </style>
 </head>
 <body>
@@ -211,6 +244,35 @@ const indexHTML = `<!DOCTYPE html>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-create">Create VM</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal">
+            <h3>Edit VM</h3>
+            <form id="edit-form">
+                <input type="hidden" id="edit-vm-id">
+                <input type="hidden" id="edit-disk-size">
+                <input type="hidden" id="edit-internet">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="edit-name">Name</label>
+                        <input type="text" id="edit-name" required placeholder="my-vm">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-vcpu">vCPUs</label>
+                        <input type="number" id="edit-vcpu" min="1" max="8" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-ram">RAM (MB)</label>
+                        <input type="number" id="edit-ram" min="128" step="128" required>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-save">Save</button>
                 </div>
             </form>
         </div>
@@ -307,6 +369,7 @@ const indexHTML = `<!DOCTYPE html>
                     html += '<div class="dropdown">';
                     html += '<button class="btn btn-more" onclick="toggleDropdown(event, \'' + vm.id + '\')">More</button>';
                     html += '<div id="dropdown-' + vm.id + '" class="dropdown-content">';
+                    html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ', ' + vm.disk_size_gb + ', ' + vm.internet_enabled + ')">Edit</button>';
                     html += '<button class="dropdown-item danger" onclick="resetVMDisk(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Reset Disk</button>';
                     html += '<button class="dropdown-item danger" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
                     html += '</div></div>';
@@ -366,6 +429,57 @@ const indexHTML = `<!DOCTYPE html>
                 setLoading(id, false);
             }
         }
+
+        function openEditModal(id, name, vcpu, ram, diskSize, internet) {
+            closeAllDropdowns();
+            document.getElementById('edit-vm-id').value = id;
+            document.getElementById('edit-name').value = name;
+            document.getElementById('edit-vcpu').value = vcpu;
+            document.getElementById('edit-ram').value = ram;
+            document.getElementById('edit-disk-size').value = diskSize;
+            document.getElementById('edit-internet').value = internet;
+            document.getElementById('edit-modal').classList.add('show');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('show');
+        }
+
+        document.getElementById('edit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-vm-id').value;
+            const name = document.getElementById('edit-name').value;
+            const vcpu = parseInt(document.getElementById('edit-vcpu').value);
+            const ram = parseInt(document.getElementById('edit-ram').value);
+            const diskSize = parseInt(document.getElementById('edit-disk-size').value);
+            const internet = document.getElementById('edit-internet').value === 'true';
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+
+            try {
+                await fetchJSON(API + '/vms/' + id, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        name: name,
+                        vcpu_count: vcpu,
+                        ram_mb: ram,
+                        disk_size_gb: diskSize,
+                        internet_enabled: internet
+                    })
+                });
+                closeEditModal();
+                await loadVMs();
+            } catch (err) {
+                showError('Failed to update VM: ' + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Close edit modal when clicking overlay
+        document.getElementById('edit-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'edit-modal') closeEditModal();
+        });
 
         function toggleDropdown(event, vmId) {
             event.stopPropagation();
