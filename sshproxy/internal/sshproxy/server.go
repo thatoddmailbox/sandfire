@@ -183,11 +183,8 @@ func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request
 			}
 			req.Reply(true, nil)
 			cmd := strings.TrimSpace(execCmd)
-			// Run the command
-			if s.handleCommand(channel, cmd, ptyReq, requests) {
-				// Command wants to continue - enter interactive shell
-				s.handleInteractiveShell(channel, ptyReq, requests)
-			}
+			// Run the command and exit - direct exec mode should not fall into interactive shell
+			s.handleCommand(channel, cmd, ptyReq, requests)
 			return
 
 		case "shell":
