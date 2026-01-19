@@ -4,6 +4,19 @@ set -e
 # Install AI tools (Claude Code)
 # This layer fetches credentials from MMDS at runtime
 
+# Install useful CLI tools for AI coding assistants
+apt-get update
+apt-get install -y software-properties-common
+add-apt-repository -y universe
+apt-get update
+apt-get install -y \
+    expect \
+    jq \
+    tree \
+    tmux \
+    screen \
+    ripgrep
+
 # Install Claude Code native binary directly (without running 'claude install' which needs a TTY)
 GCS_BUCKET="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
