@@ -272,6 +272,27 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 		return err
 	}
 
+	// Set up SSH agent forwarding if available
+	var sshCleanup func()
+	sshAgentSock := os.Getenv("SSH_AUTH_SOCK")
+	if sshAgentSock != "" {
+		cleanup, chrootSockPath, err := b.setupSSHAgentForwarding(rootfsDir, sshAgentSock)
+		if err != nil {
+			fmt.Printf("Warning: failed to set up SSH agent forwarding: %v\n", err)
+		} else {
+			sshCleanup = cleanup
+			sshAgentSock = chrootSockPath
+			fmt.Println("SSH agent forwarding enabled")
+		}
+	} else if os.Getuid() == 0 {
+		fmt.Println("Note: SSH_AUTH_SOCK not set. For SSH agent forwarding, use: sudo -E layercake build ...")
+	}
+	defer func() {
+		if sshCleanup != nil {
+			sshCleanup()
+		}
+	}()
+
 	// Run in chroot
 	cmd := exec.Command("chroot", rootfsDir, "/bin/bash", "/tmp/layer.sh")
 	cmd.Stdout = os.Stdout
@@ -280,6 +301,9 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"DEBIAN_FRONTEND=noninteractive",
 	}
+	if sshAgentSock != "" {
+		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sshAgentSock)
+	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -287,6 +311,47 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 	// Clean up
 	os.Remove(scriptDest)
 	return nil
+}
+
+// setupSSHAgentForwarding bind-mounts the SSH agent socket into the chroot
+// Returns a cleanup function, the path to the socket inside the chroot, and any error
+func (b *Builder) setupSSHAgentForwarding(rootfsDir, hostSockPath string) (cleanup func(), chrootSockPath string, err error) {
+	// Verify the host socket exists
+	if _, err := os.Stat(hostSockPath); err != nil {
+		return nil, "", fmt.Errorf("SSH agent socket not found: %w", err)
+	}
+
+	// Create directory for the socket inside chroot
+	sshDir := filepath.Join(rootfsDir, "tmp", "ssh-agent")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return nil, "", fmt.Errorf("failed to create ssh-agent directory: %w", err)
+	}
+
+	// The socket path inside the chroot
+	chrootSockPath = "/tmp/ssh-agent/agent.sock"
+	hostMountPoint := filepath.Join(rootfsDir, chrootSockPath)
+
+	// Create an empty file to use as the bind mount target
+	f, err := os.Create(hostMountPoint)
+	if err != nil {
+		os.RemoveAll(sshDir)
+		return nil, "", fmt.Errorf("failed to create mount point: %w", err)
+	}
+	f.Close()
+
+	// Bind mount the socket
+	cmd := exec.Command("mount", "--bind", hostSockPath, hostMountPoint)
+	if err := cmd.Run(); err != nil {
+		os.RemoveAll(sshDir)
+		return nil, "", fmt.Errorf("failed to bind mount SSH agent socket: %w", err)
+	}
+
+	cleanup = func() {
+		exec.Command("umount", hostMountPoint).Run()
+		os.RemoveAll(sshDir)
+	}
+
+	return cleanup, chrootSockPath, nil
 }
 
 // createExt4Image creates an ext4 image from a directory
