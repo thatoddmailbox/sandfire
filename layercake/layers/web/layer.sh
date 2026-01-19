@@ -1,6 +1,21 @@
 #!/bin/bash
 set -e
 
+# Install Go
+curl -LO https://go.dev/dl/go1.25.6.linux-amd64.tar.gz
+rm -rf /usr/local/go
+tar -C /usr/local -xzf go1.25.6.linux-amd64.tar.gz
+rm go1.25.6.linux-amd64.tar.gz
+
+# Add Go to system-wide PATH and set GOROOT
+cat >> /etc/profile << 'EOF'
+export GOROOT=/usr/local/go
+export PATH=$PATH:/usr/local/go/bin
+EOF
+
+# Verify Go installation
+GOROOT=/usr/local/go /usr/local/go/bin/go version
+
 # Enable universe repository and install Caddy
 apt-get update
 apt-get install -y software-properties-common
