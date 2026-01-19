@@ -50,6 +50,7 @@ type MMDSMetadata struct {
 type SandfireMetadata struct {
 	VMID              string          `json:"vm_id"`
 	VMName            string          `json:"vm_name"`
+	Domain            string          `json:"domain,omitempty"`
 	ClaudeCredentials json.RawMessage `json:"claude_credentials,omitempty"`
 }
 

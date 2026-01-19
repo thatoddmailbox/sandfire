@@ -113,9 +113,16 @@ if [ -z "$METADATA" ]; then
     exit 0
 fi
 
-# Parse VM name and ID using Python (available in base image)
+# Parse VM name, ID, and domain using Python (available in base image)
 VM_NAME=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('vm_name',''))" 2>/dev/null)
 VM_ID=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('vm_id',''))" 2>/dev/null)
+VM_DOMAIN=$(echo "$METADATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('domain',''))" 2>/dev/null)
+
+# Write domain to /etc/sandfire/domain if available
+if [ -n "$VM_DOMAIN" ]; then
+    mkdir -p /etc/sandfire
+    echo "$VM_DOMAIN" > /etc/sandfire/domain
+fi
 
 # Update MOTD with VM information
 cat > /etc/motd << EOF

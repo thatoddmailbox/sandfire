@@ -359,7 +359,8 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 	// Configure MMDS with VM metadata (network interface ID is "eth0")
 	// Include Claude credentials if available on the host
 	claudeCredentials := loadClaudeConfig()
-	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, claudeCredentials); err != nil {
+	vmDomain := getVMDomain(vm.ID)
+	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, vmDomain, claudeCredentials); err != nil {
 		proc.stop()
 		m.networkMgr.DeleteTap(tapDevice)
 		m.networkMgr.ReleaseIP(ipAddress)
@@ -513,4 +514,13 @@ func loadClaudeConfig() (credentials json.RawMessage) {
 	}
 
 	return credentials
+}
+
+// getVMDomain returns the full domain for a VM based on SANDFIRE_DOMAIN env var.
+func getVMDomain(vmID string) string {
+	baseDomain := os.Getenv("SANDFIRE_DOMAIN")
+	if baseDomain == "" {
+		baseDomain = "sand.studer.dev"
+	}
+	return vmID + "." + baseDomain
 }
