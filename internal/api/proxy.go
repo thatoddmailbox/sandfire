@@ -141,48 +141,6 @@ func (s *Server) handleCaddyGetCertificate(w http.ResponseWriter, r *http.Reques
 	w.Write(certData)
 }
 
-// handleCaddyCheckDomain handles GET /api/caddy/check-domain
-// This is called by Caddy's on_demand_tls to validate domain requests.
-// Returns 200 if the domain should get a certificate, 403 otherwise.
-func (s *Server) handleCaddyCheckDomain(w http.ResponseWriter, r *http.Request) {
-	domain := r.URL.Query().Get("domain")
-	if domain == "" {
-		http.Error(w, "missing domain parameter", http.StatusBadRequest)
-		return
-	}
-
-	vmID, err := extractVMID(domain)
-	if err != nil {
-		log.Printf("check-domain: rejecting %q: %v", domain, err)
-		http.Error(w, "invalid domain", http.StatusForbidden)
-		return
-	}
-
-	// Base domain is always allowed
-	if vmID == "" {
-		log.Printf("check-domain: allowing base domain %q", domain)
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Check if VM exists
-	vm, err := s.db.GetVM(vmID)
-	if err != nil {
-		log.Printf("check-domain: database error for %q: %v", domain, err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if vm == nil {
-		log.Printf("check-domain: rejecting %q: VM %s not found", domain, vmID)
-		http.Error(w, "VM not found", http.StatusForbidden)
-		return
-	}
-
-	log.Printf("check-domain: allowing %q for VM %s", domain, vmID)
-	w.WriteHeader(http.StatusOK)
-}
-
 // handleVMProxy handles requests to VM subdomains by proxying to the VM
 func (s *Server) handleVMProxy(w http.ResponseWriter, r *http.Request, vmID string) {
 	vm, err := s.db.GetVM(vmID)

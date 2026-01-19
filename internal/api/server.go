@@ -31,7 +31,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	s.mux.HandleFunc("GET /api/caddy/check-domain", s.handleCaddyCheckDomain)
 	s.mux.HandleFunc("GET /api/caddy/get-certificate", s.handleCaddyGetCertificate)
 
 	s.mux.HandleFunc("GET /api/os-images", s.handleListOSImages)
