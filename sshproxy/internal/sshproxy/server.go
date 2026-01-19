@@ -158,15 +158,16 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 			continue
 		}
 
-		go s.handleSession(channel, requests)
+		go s.handleSession(sshConn, channel, requests)
 	}
 }
 
-func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request) {
+func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, requests <-chan *ssh.Request) {
 	defer channel.Close()
 
 	var execCmd string
 	var ptyReq *ptyRequestMsg
+	var agentForwarding bool
 
 	// We need to handle requests in a goroutine for window-change events during proxy
 	// But first, collect the initial setup requests
@@ -184,17 +185,23 @@ func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request
 			req.Reply(true, nil)
 			cmd := strings.TrimSpace(execCmd)
 			// Run the command and exit - direct exec mode should not fall into interactive shell
-			s.handleCommand(channel, cmd, ptyReq, requests)
+			s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests)
 			return
 
 		case "shell":
 			req.Reply(true, nil)
-			s.handleInteractiveShell(channel, ptyReq, requests)
+			s.handleInteractiveShell(sshConn, channel, ptyReq, agentForwarding, requests)
 			return
 
 		case "pty-req":
 			ptyReq = parsePtyRequest(req.Payload)
 			req.Reply(true, nil)
+
+		case "auth-agent-req@openssh.com":
+			// Client is requesting SSH agent forwarding
+			agentForwarding = true
+			req.Reply(true, nil)
+			log.Printf("Agent forwarding requested")
 
 		default:
 			if req.WantReply {
@@ -263,7 +270,7 @@ func parseTerminalModes(data []byte) ssh.TerminalModes {
 	return modes
 }
 
-func (s *Server) handleInteractiveShell(channel ssh.Channel, ptyReq *ptyRequestMsg, requests <-chan *ssh.Request) {
+func (s *Server) handleInteractiveShell(sshConn *ssh.ServerConn, channel ssh.Channel, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) {
 	// Drain any remaining requests in background
 	go func() {
 		for req := range requests {
@@ -342,12 +349,12 @@ func (s *Server) handleInteractiveShell(channel ssh.Channel, ptyReq *ptyRequestM
 								proxyDone = make(chan struct{})
 								go func(vmID string, input chan []byte, done chan struct{}) {
 									defer close(done)
-									s.handleConnectWithInput(channel, vmID, ptyReq, input)
+									s.handleConnectWithInput(sshConn, channel, vmID, ptyReq, agentForwarding, input)
 								}(parts[1], proxyInput, proxyDone)
 								continue inputLoop
 							}
 
-							if !s.handleCommand(channel, cmd, ptyReq, requests) {
+							if !s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests) {
 								return
 							}
 						}
@@ -408,7 +415,7 @@ func (s *Server) printWelcome(channel ssh.Channel) {
 }
 
 // handleCommand handles a command. Returns false if the session should end.
-func (s *Server) handleCommand(channel ssh.Channel, cmd string, ptyReq *ptyRequestMsg, requests <-chan *ssh.Request) bool {
+func (s *Server) handleCommand(sshConn *ssh.ServerConn, channel ssh.Channel, cmd string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return true
@@ -428,7 +435,7 @@ func (s *Server) handleCommand(channel ssh.Channel, cmd string, ptyReq *ptyReque
 			fmt.Fprintf(channel, "Usage: connect <vm-id>\r\n")
 			return true
 		}
-		s.handleConnect(channel, parts[1], ptyReq, requests)
+		s.handleConnect(sshConn, channel, parts[1], ptyReq, agentForwarding, requests)
 		return true // Always continue shell after connect (success or failure)
 
 	default:
@@ -469,7 +476,7 @@ func (s *Server) handleList(channel ssh.Channel) {
 }
 
 // handleConnectWithInput handles connect command with input provided via channel
-func (s *Server) handleConnectWithInput(channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, input <-chan []byte) {
+func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte) {
 	// Look up the VM
 	vm, err := s.apiClient.GetVM(vmID)
 	if err != nil {
@@ -496,10 +503,10 @@ func (s *Server) handleConnectWithInput(channel ssh.Channel, vmID string, ptyReq
 
 	// Connect to the VM's SSH server
 	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
-	s.proxySSHWithInput(channel, vmAddr, ptyReq, input)
+	s.proxySSHWithInput(sshConn, channel, vmAddr, ptyReq, agentForwarding, input)
 }
 
-func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, input <-chan []byte) {
+func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte) {
 	config := &ssh.ClientConfig{
 		User: vmUsername,
 		Auth: []ssh.AuthMethod{
@@ -515,12 +522,32 @@ func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *p
 	}
 	defer client.Close()
 
+	done := make(chan struct{})
+
+	// Handle agent forwarding if requested
+	if agentForwarding {
+		// Handle incoming auth-agent channels from VM and forward to client
+		go s.forwardAgentChannels(client, sshConn, done)
+	}
+
 	session, err := client.NewSession()
 	if err != nil {
 		fmt.Fprintf(channel, "Failed to create session: %v\r\n", err)
 		return
 	}
 	defer session.Close()
+
+	// Request agent forwarding on the VM session if enabled
+	if agentForwarding {
+		ok, err := session.SendRequest("auth-agent-req@openssh.com", true, nil)
+		if err != nil {
+			log.Printf("Failed to request agent forwarding on VM: %v", err)
+		} else if !ok {
+			log.Printf("VM rejected agent forwarding request")
+		} else {
+			log.Printf("Agent forwarding enabled on VM session")
+		}
+	}
 
 	// Determine terminal settings from client's PTY request
 	term := "xterm-256color"
@@ -579,8 +606,6 @@ func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *p
 		return
 	}
 
-	done := make(chan struct{})
-
 	// Input channel -> VM stdin
 	go func() {
 		for {
@@ -615,7 +640,7 @@ func (s *Server) proxySSHWithInput(channel ssh.Channel, vmAddr string, ptyReq *p
 }
 
 // handleConnect returns true if a connection was established (session should end after)
-func (s *Server) handleConnect(channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, requests <-chan *ssh.Request) bool {
+func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
 	// Look up the VM
 	vm, err := s.apiClient.GetVM(vmID)
 	if err != nil {
@@ -647,10 +672,10 @@ func (s *Server) handleConnect(channel ssh.Channel, vmID string, ptyReq *ptyRequ
 
 	// Connect to the VM's SSH server
 	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
-	return s.proxySSH(channel, vmAddr, ptyReq, requests)
+	return s.proxySSH(sshConn, channel, vmAddr, ptyReq, agentForwarding, requests)
 }
 
-func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, requests <-chan *ssh.Request) bool {
+func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
 	config := &ssh.ClientConfig{
 		User: vmUsername,
 		Auth: []ssh.AuthMethod{
@@ -666,12 +691,34 @@ func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequest
 	}
 	defer client.Close()
 
+	// Channel to signal when session ends
+	done := make(chan struct{})
+
+	// Handle agent forwarding if requested
+	if agentForwarding {
+		// Handle incoming auth-agent channels from VM and forward to client
+		go s.forwardAgentChannels(client, sshConn, done)
+	}
+
 	session, err := client.NewSession()
 	if err != nil {
 		fmt.Fprintf(channel, "Failed to create session: %v\r\n", err)
 		return false
 	}
 	defer session.Close()
+
+	// Request agent forwarding on the VM session if enabled
+	if agentForwarding {
+		// Send auth-agent-req@openssh.com request to the VM
+		ok, err := session.SendRequest("auth-agent-req@openssh.com", true, nil)
+		if err != nil {
+			log.Printf("Failed to request agent forwarding on VM: %v", err)
+		} else if !ok {
+			log.Printf("VM rejected agent forwarding request")
+		} else {
+			log.Printf("Agent forwarding enabled on VM session")
+		}
+	}
 
 	// Determine terminal settings from client's PTY request
 	term := "xterm-256color"
@@ -729,9 +776,6 @@ func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequest
 		fmt.Fprintf(channel, "Failed to start shell: %v\r\n", err)
 		return false
 	}
-
-	// Channel to signal when session ends
-	done := make(chan struct{})
 
 	// Handle window-change requests from the client
 	if requests != nil {
@@ -834,4 +878,81 @@ func (s *Server) proxySSH(channel ssh.Channel, vmAddr string, ptyReq *ptyRequest
 	}
 
 	return true
+}
+
+// forwardAgentChannels handles auth-agent channel requests from the VM and forwards them to the client
+func (s *Server) forwardAgentChannels(vmClient *ssh.Client, clientConn *ssh.ServerConn, done <-chan struct{}) {
+	// Listen for auth-agent@openssh.com channels from the VM
+	vmAgentChannels := vmClient.HandleChannelOpen("auth-agent@openssh.com")
+	if vmAgentChannels == nil {
+		log.Printf("Could not set up agent channel handler")
+		return
+	}
+
+	for {
+		select {
+		case <-done:
+			return
+		case newChannel, ok := <-vmAgentChannels:
+			if !ok {
+				return
+			}
+			go s.handleAgentChannel(newChannel, clientConn, done)
+		}
+	}
+}
+
+// handleAgentChannel proxies a single agent channel between the VM and the client
+func (s *Server) handleAgentChannel(vmNewChannel ssh.NewChannel, clientConn *ssh.ServerConn, done <-chan struct{}) {
+	// Accept the channel from the VM
+	vmChannel, vmRequests, err := vmNewChannel.Accept()
+	if err != nil {
+		log.Printf("Failed to accept agent channel from VM: %v", err)
+		return
+	}
+	defer vmChannel.Close()
+
+	// Discard requests on this channel
+	go ssh.DiscardRequests(vmRequests)
+
+	// Open a corresponding channel to the client
+	clientChannel, clientRequests, err := clientConn.OpenChannel("auth-agent@openssh.com", nil)
+	if err != nil {
+		log.Printf("Failed to open agent channel to client: %v", err)
+		return
+	}
+	defer clientChannel.Close()
+
+	// Discard requests on the client channel
+	go ssh.DiscardRequests(clientRequests)
+
+	// Bidirectionally copy data between the two channels
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// VM -> Client
+	go func() {
+		defer wg.Done()
+		io.Copy(clientChannel, vmChannel)
+		clientChannel.CloseWrite()
+	}()
+
+	// Client -> VM
+	go func() {
+		defer wg.Done()
+		io.Copy(vmChannel, clientChannel)
+		vmChannel.CloseWrite()
+	}()
+
+	// Wait for copy to complete or session to end
+	copyDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(copyDone)
+	}()
+
+	select {
+	case <-copyDone:
+	case <-done:
+	}
 }
