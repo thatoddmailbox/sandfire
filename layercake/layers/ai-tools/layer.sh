@@ -4,6 +4,10 @@ set -e
 # Install AI tools (Claude Code)
 # This layer fetches credentials from MMDS at runtime
 
+# Configure NOPASSWD sudo for sudo group
+echo '%sudo ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/sudo-nopasswd
+chmod 440 /etc/sudoers.d/sudo-nopasswd
+
 # Install useful CLI tools for AI coding assistants
 apt-get update
 apt-get install -y software-properties-common
