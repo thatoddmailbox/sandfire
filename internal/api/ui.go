@@ -87,6 +87,7 @@ const indexHTML = `<!DOCTYPE html>
         .btn-stop { background: #ef4444; color: #fff; }
         .btn-delete { background: #6b7280; color: #fff; }
         .btn-create { background: #d4470a; color: #fff; padding: 10px 20px; }
+        .btn-copy { background: #3b82f6; color: #fff; }
         .actions { display: flex; gap: 8px; align-items: center; }
         .form-grid {
             display: grid;
@@ -268,6 +269,7 @@ const indexHTML = `<!DOCTYPE html>
                 html += '<td><span class="vm-specs">' + escapeHtml(osImage) + '</span></td>';
                 html += '<td><span class="vm-specs">' + escapeHtml(specs) + '</span></td>';
                 html += '<td><div class="actions">';
+                html += '<button class="btn btn-copy" onclick="copySSH(\'' + vm.id + '\', this)">Copy SSH</button>';
 
                 if (vm.state === 'running') {
                     html += '<button class="btn btn-stop" onclick="stopVM(\'' + vm.id + '\')">Stop</button>';
@@ -322,6 +324,18 @@ const indexHTML = `<!DOCTYPE html>
             if (row) {
                 row.classList.toggle('loading', loading);
                 row.querySelectorAll('button').forEach(btn => btn.disabled = loading);
+            }
+        }
+
+        async function copySSH(id, btn) {
+            const cmd = 'ssh -t -p 2222 ' + window.location.hostname + ' connect ' + id;
+            try {
+                await navigator.clipboard.writeText(cmd);
+                const original = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = original, 1500);
+            } catch (e) {
+                showError('Failed to copy to clipboard');
             }
         }
 
