@@ -605,6 +605,19 @@ func (m *Manager) deleteDNSRecord(ctx context.Context, recordID string) error {
 	return nil
 }
 
+// DeleteCertificate removes the certificate file for a VM
+func (m *Manager) DeleteCertificate(vmID string) error {
+	certPath := filepath.Join(m.dataDir, vmID+".pem")
+	err := os.Remove(certPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete certificate: %w", err)
+	}
+	if err == nil {
+		log.Printf("certs: deleted certificate for %s", vmID)
+	}
+	return nil
+}
+
 // GetCertificateForTLS is a helper that returns a tls.Certificate
 func (m *Manager) GetCertificateForTLS(ctx context.Context, vmID string) (*tls.Certificate, error) {
 	data, err := m.GetCertificate(ctx, vmID)

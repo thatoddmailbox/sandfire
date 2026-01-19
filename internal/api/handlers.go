@@ -188,6 +188,14 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clean up certificate if cert manager is configured
+	if s.certManager != nil {
+		if err := s.certManager.DeleteCertificate(id); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to cleanup certificate: "+err.Error())
+			return
+		}
+	}
+
 	if err := s.db.DeleteVM(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
