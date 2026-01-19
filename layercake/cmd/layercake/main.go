@@ -133,6 +133,10 @@ func cmdBuild(args []string) error {
 		return fmt.Errorf("specify a layer ID or use --all")
 	}
 
+	if fs.NArg() > 1 {
+		return fmt.Errorf("too many arguments: only one layer ID can be specified at a time")
+	}
+
 	layerID := fs.Arg(0)
 	if *cascade {
 		return builder.BuildCascade(layerID)
