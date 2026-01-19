@@ -165,7 +165,7 @@ const indexHTML = `<!DOCTYPE html>
                     </div>
                     <div class="form-group">
                         <label for="ram_mb">RAM (MB)</label>
-                        <input type="number" id="ram_mb" name="ram_mb" value="512" min="128" step="128">
+                        <input type="number" id="ram_mb" name="ram_mb" value="1024" min="128" step="128">
                     </div>
                     <div class="form-group">
                         <label for="disk_size_gb">Disk (GB)</label>
@@ -348,7 +348,7 @@ const indexHTML = `<!DOCTYPE html>
             const data = {
                 name: form.name.value,
                 os_image_id: form.os_image_id.value,
-                ram_mb: parseInt(form.ram_mb.value) || 512,
+                ram_mb: parseInt(form.ram_mb.value) || 1024,
                 disk_size_gb: parseInt(form.disk_size_gb.value) || 8,
                 vcpu_count: parseInt(form.vcpu_count.value) || 1,
                 internet_enabled: form.internet_enabled.checked
