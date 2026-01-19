@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -281,10 +282,16 @@ func (m *Manager) issueCertificate(ctx context.Context, vmID string) ([]byte, er
 		}
 	}
 
-	// Phase 3: Wait for DNS propagation (30 seconds should be enough for Cloudflare)
+	// Phase 3: Wait for DNS propagation by polling DNS servers
 	if len(challenges) > 0 {
-		log.Printf("certs: waiting 30s for DNS propagation...")
-		time.Sleep(30 * time.Second)
+		log.Printf("certs: waiting for DNS propagation...")
+		for _, c := range challenges {
+			if err := m.waitForDNSPropagation(ctx, c.challengeDomain, c.keyAuth); err != nil {
+				cleanupRecords()
+				return nil, fmt.Errorf("DNS propagation failed for %s: %w", c.challengeDomain, err)
+			}
+		}
+		log.Printf("certs: DNS propagation verified")
 	}
 
 	// Phase 4: Accept all challenges
@@ -389,6 +396,88 @@ func loadOrCreateAccountKey(path string) (*ecdsa.PrivateKey, error) {
 
 	log.Printf("certs: created new account key at %s", path)
 	return key, nil
+}
+
+// waitForDNSPropagation polls DNS servers until the TXT record is visible
+func (m *Manager) waitForDNSPropagation(ctx context.Context, domain, expectedValue string) error {
+	// DNS servers to check - using authoritative Cloudflare nameservers
+	// and Google's public DNS for broader verification
+	dnsServers := []string{
+		"1.1.1.1:53",  // Cloudflare primary
+		"1.0.0.1:53",  // Cloudflare secondary
+		"8.8.8.8:53",  // Google (used by Let's Encrypt)
+	}
+
+	timeout := 60 * time.Second
+	pollInterval := 500 * time.Millisecond
+
+	deadline := time.Now().Add(timeout)
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		attempt++
+		allFound := true
+
+		for _, server := range dnsServers {
+			found, err := m.checkDNSTXT(server, domain, expectedValue)
+			if err != nil {
+				log.Printf("certs: DNS check error for %s via %s: %v", domain, server, err)
+				allFound = false
+				continue
+			}
+			if !found {
+				allFound = false
+			}
+		}
+
+		if allFound {
+			log.Printf("certs: DNS record visible for %s after %d attempts (%.1fs)",
+				domain, attempt, time.Since(deadline.Add(-timeout)).Seconds())
+			return nil
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("timeout waiting for DNS propagation after %v", timeout)
+}
+
+// checkDNSTXT queries a specific DNS server for TXT records
+func (m *Manager) checkDNSTXT(dnsServer, domain, expectedValue string) (bool, error) {
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, "udp", dnsServer)
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	records, err := resolver.LookupTXT(ctx, domain)
+	if err != nil {
+		// NXDOMAIN or other errors mean the record isn't there yet
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, record := range records {
+		if record == expectedValue {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // Cloudflare API helpers
