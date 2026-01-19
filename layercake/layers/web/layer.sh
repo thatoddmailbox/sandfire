@@ -1,27 +1,163 @@
 #!/bin/bash
 set -e
 
-# Install and configure nginx web server
-
+# Enable universe repository and install Caddy
 apt-get update
-apt-get install -y nginx
+apt-get install -y software-properties-common
+add-apt-repository -y universe
+apt-get update
+apt-get install -y caddy
 
-# Enable nginx to start on boot
-systemctl enable nginx
+# Disable the default Caddy service - we'll use our own config
+systemctl disable caddy
 
-# Create a simple default page
-cat > /var/www/html/index.html << 'EOF'
+# Create the sandfire config directory
+mkdir -p /etc/sandfire
+
+# Create empty services file (other layers can append to this)
+touch /etc/sandfire/services
+
+# Create the Caddyfile generator script
+cat > /usr/local/bin/sandfire-generate-caddyfile.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+SERVICES_FILE="/etc/sandfire/services"
+CADDYFILE="/etc/caddy/Caddyfile"
+INDEX_DIR="/var/www/html"
+
+mkdir -p "$INDEX_DIR"
+
+# Start building the Caddyfile
+cat > "$CADDYFILE" << 'HEADER'
+# Auto-generated Caddyfile - do not edit manually
+# Edit /etc/sandfire/services instead
+
+:80 {
+HEADER
+
+# Check if services file exists and has content
+if [ -s "$SERVICES_FILE" ]; then
+    # Read services and generate reverse proxy rules
+    SERVICES_HTML=""
+
+    while read -r name port || [ -n "$name" ]; do
+        # Skip empty lines and comments
+        [[ -z "$name" || "$name" =~ ^# ]] && continue
+
+        # Generate matcher and handler for this service
+        # Using expression matcher to check if host starts with service name
+        cat >> "$CADDYFILE" << EOF
+    @${name} expression {http.request.host}.startsWith("${name}.")
+    handle @${name} {
+        reverse_proxy localhost:${port}
+    }
+
+EOF
+
+        # Build HTML list item (data-service attribute for JS to process)
+        SERVICES_HTML="${SERVICES_HTML}        <li><a href=\"#\" data-service=\"${name}\">${name}</a> &rarr; port ${port}</li>\n"
+    done < "$SERVICES_FILE"
+
+    # Generate index page with service list
+    cat > "$INDEX_DIR/index.html" << EOF
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sandfire VM</title>
+    <title>Sandfire VM - Services</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        h1 { color: #333; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 10px; margin: 5px 0; background: #f5f5f5; border-radius: 4px; }
+        a { color: #0066cc; text-decoration: none; font-weight: bold; }
+        a:hover { text-decoration: underline; }
+        code { background: #eee; padding: 2px 6px; border-radius: 3px; }
+    </style>
 </head>
 <body>
-    <h1>Welcome to Sandfire VM</h1>
-    <p>Nginx is running successfully.</p>
+    <h1>Available Services</h1>
+    <ul>
+$(echo -e "$SERVICES_HTML")
+    </ul>
+    <p><small>Services are defined in <code>/etc/sandfire/services</code></small></p>
+    <script>
+        document.querySelectorAll('a[data-service]').forEach(function(a) {
+            var service = a.getAttribute('data-service');
+            a.href = location.protocol + '//' + service + '.' + location.host;
+        });
+    </script>
 </body>
 </html>
 EOF
+
+else
+    # No services defined - show info page
+    cat > "$INDEX_DIR/index.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sandfire VM - No Services</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        h1 { color: #333; }
+        code { background: #eee; padding: 2px 6px; border-radius: 3px; }
+        pre { background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>No Services Defined</h1>
+    <p>This VM has no services configured yet.</p>
+    <p>To add services, edit <code>/etc/sandfire/services</code> with entries in the format:</p>
+    <pre>service_name port</pre>
+    <p>For example:</p>
+    <pre>api 3000
+app 8000</pre>
+    <p>Then restart the VM or run:</p>
+    <pre>sudo systemctl restart sandfire-generate-caddyfile
+sudo systemctl restart caddy</pre>
+</body>
+</html>
+EOF
+fi
+
+# Add default handler to serve the index page
+cat >> "$CADDYFILE" << 'FOOTER'
+    # Default handler - serve the index page
+    handle {
+        root * /var/www/html
+        file_server
+    }
+}
+FOOTER
+
+echo "Caddyfile generated successfully"
+SCRIPT
+
+chmod +x /usr/local/bin/sandfire-generate-caddyfile.sh
+
+# Create systemd service to generate Caddyfile before Caddy starts
+cat > /etc/systemd/system/sandfire-generate-caddyfile.service << 'EOF'
+[Unit]
+Description=Generate Caddyfile from services configuration
+Before=caddy.service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sandfire-generate-caddyfile.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable both services
+systemctl enable sandfire-generate-caddyfile
+systemctl enable caddy
+
+# Generate initial Caddyfile
+/usr/local/bin/sandfire-generate-caddyfile.sh
 
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
