@@ -641,6 +641,11 @@ func (s *Server) handleConnect(channel ssh.Channel, vmID string, ptyReq *ptyRequ
 		return false
 	}
 
+	// Warn if no PTY was requested - interactive sessions won't work well
+	if ptyReq == nil {
+		fmt.Fprintf(channel, "Warning: No PTY allocated. For interactive use, run: ssh -t ...\r\n")
+	}
+
 	fmt.Fprintf(channel, "Connecting to %s (%s) at %s...\r\n", vm.Name, vm.ID, *vm.IPAddress)
 
 	// Connect to the VM's SSH server
