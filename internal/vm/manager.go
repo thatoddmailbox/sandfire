@@ -3,10 +3,12 @@ package vm
 import (
 	"bufio"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -355,7 +357,9 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 	}
 
 	// Configure MMDS with VM metadata (network interface ID is "eth0")
-	if err := proc.configureMMDS("eth0", vm.ID, vm.Name); err != nil {
+	// Include Claude credentials if available on the host
+	claudeCredentials := loadClaudeConfig()
+	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, claudeCredentials); err != nil {
 		proc.stop()
 		m.networkMgr.DeleteTap(tapDevice)
 		m.networkMgr.ReleaseIP(ipAddress)
@@ -446,4 +450,41 @@ func generateMAC() string {
 	buf[0] = (buf[0] | 0x02) & 0xfe
 	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
 		buf[0], buf[1], buf[2], buf[3], buf[4], buf[5])
+}
+
+// loadClaudeConfig loads Claude Code credentials from the running user's home directory.
+// Returns nil for either if not found (not an error - VMs can run without them).
+func loadClaudeConfig() (credentials json.RawMessage) {
+	var homeDir string
+
+	// If running with sudo, use the original user's home directory
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		sudoUserInfo, err := user.Lookup(sudoUser)
+		if err == nil {
+			homeDir = sudoUserInfo.HomeDir
+		}
+	}
+
+	// Fall back to current user's home if SUDO_USER not available
+	if homeDir == "" {
+		currentUser, err := user.Current()
+		if err != nil {
+			log.Printf("Could not determine current user for Claude config: %v", err)
+			return nil
+		}
+		homeDir = currentUser.HomeDir
+	}
+
+	claudeDir := filepath.Join(homeDir, ".claude")
+
+	// Load credentials
+	credPath := filepath.Join(claudeDir, ".credentials.json")
+	if data, err := os.ReadFile(credPath); err == nil && json.Valid(data) {
+		credentials = json.RawMessage(data)
+		log.Printf("Loaded Claude credentials from %s", credPath)
+	} else if err != nil && !os.IsNotExist(err) {
+		log.Printf("Error reading Claude credentials: %v", err)
+	}
+
+	return credentials
 }

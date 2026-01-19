@@ -1,5 +1,7 @@
 package vm
 
+import "encoding/json"
+
 // Firecracker configuration structures for JSON serialization
 
 type FirecrackerConfig struct {
@@ -46,8 +48,9 @@ type MMDSMetadata struct {
 
 // SandfireMetadata contains Sandfire-specific VM metadata
 type SandfireMetadata struct {
-	VMID   string `json:"vm_id"`
-	VMName string `json:"vm_name"`
+	VMID              string          `json:"vm_id"`
+	VMName            string          `json:"vm_name"`
+	ClaudeCredentials json.RawMessage `json:"claude_credentials,omitempty"`
 }
 
 func NewFirecrackerConfig(kernelPath, rootfsPath string, vcpuCount, ramMB int, tapDevice, guestMAC, guestIP string) *FirecrackerConfig {

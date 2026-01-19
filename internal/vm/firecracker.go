@@ -131,7 +131,7 @@ func (p *FirecrackerProcess) putConfig(client *http.Client, path string, data in
 }
 
 // configureMMDS sets up the MMDS service with VM metadata
-func (p *FirecrackerProcess) configureMMDS(networkIfaceID, vmID, vmName string) error {
+func (p *FirecrackerProcess) configureMMDS(networkIfaceID, vmID, vmName string, claudeCredentials json.RawMessage) error {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
@@ -153,8 +153,9 @@ func (p *FirecrackerProcess) configureMMDS(networkIfaceID, vmID, vmName string) 
 	// Set the metadata
 	metadata := MMDSMetadata{
 		Sandfire: SandfireMetadata{
-			VMID:   vmID,
-			VMName: vmName,
+			VMID:              vmID,
+			VMName:            vmName,
+			ClaudeCredentials: claudeCredentials,
 		},
 	}
 	if err := p.putConfig(client, "/mmds", metadata); err != nil {
