@@ -177,7 +177,12 @@ func (b *Builder) buildBaseLayer(layer *Layer, workDir string) error {
 		return fmt.Errorf("failed to write build hash: %w", err)
 	}
 
-	fmt.Printf("Layer %s built successfully\n", layer.ID)
+	// Get disk usage for success message
+	if used, total, err := getRootfsUsage(layer.RootfsPath()); err == nil {
+		fmt.Printf("Layer %s built successfully (used %s out of %s)\n", layer.ID, formatBytes(used), formatBytes(total))
+	} else {
+		fmt.Printf("Layer %s built successfully\n", layer.ID)
+	}
 	return nil
 }
 
@@ -247,7 +252,12 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 		return fmt.Errorf("failed to write build hash: %w", err)
 	}
 
-	fmt.Printf("Layer %s built successfully\n", layer.ID)
+	// Get disk usage for success message
+	if used, total, err := getRootfsUsage(layer.RootfsPath()); err == nil {
+		fmt.Printf("Layer %s built successfully (used %s out of %s)\n", layer.ID, formatBytes(used), formatBytes(total))
+	} else {
+		fmt.Printf("Layer %s built successfully\n", layer.ID)
+	}
 	return nil
 }
 
@@ -442,6 +452,47 @@ func unmountIfMounted(devicePath string) error {
 	}
 
 	return nil
+}
+
+// getRootfsUsage returns used and total space in bytes for an ext4 filesystem
+func getRootfsUsage(path string) (used, total int64, err error) {
+	out, err := exec.Command("dumpe2fs", "-h", path).Output()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var blockCount, freeBlocks, blockSize int64
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "Block count:") {
+			fmt.Sscanf(line, "Block count: %d", &blockCount)
+		} else if strings.HasPrefix(line, "Free blocks:") {
+			fmt.Sscanf(line, "Free blocks: %d", &freeBlocks)
+		} else if strings.HasPrefix(line, "Block size:") {
+			fmt.Sscanf(line, "Block size: %d", &blockSize)
+		}
+	}
+
+	if blockSize == 0 {
+		return 0, 0, fmt.Errorf("could not determine block size")
+	}
+
+	total = blockCount * blockSize
+	used = (blockCount - freeBlocks) * blockSize
+	return used, total, nil
+}
+
+// formatBytes formats bytes as human-readable size (e.g., "1.2 GB")
+func formatBytes(bytes int64) string {
+	const (
+		GB = 1024 * 1024 * 1024
+		MB = 1024 * 1024
+	)
+	if bytes >= GB {
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
+	}
+	return fmt.Sprintf("%.0f MB", float64(bytes)/float64(MB))
 }
 
 // copyFile copies a file
