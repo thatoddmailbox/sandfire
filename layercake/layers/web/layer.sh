@@ -53,6 +53,17 @@ HEADER
 
 # Check if services file exists and has content
 if [ -s "$SERVICES_FILE" ]; then
+    # Update /etc/hosts with service.localhost entries
+    # First, remove any previous sandfire-managed entries
+    sed -i '/# sandfire-managed$/d' /etc/hosts
+
+    # Add new entries for each service
+    while read -r name port || [ -n "$name" ]; do
+        # Skip empty lines and comments
+        [[ -z "$name" || "$name" =~ ^# ]] && continue
+        echo "127.0.0.1   ${name}.localhost # sandfire-managed" >> /etc/hosts
+    done < "$SERVICES_FILE"
+
     # Read services and generate reverse proxy rules
     SERVICES_HTML=""
 
