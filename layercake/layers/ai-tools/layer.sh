@@ -17,22 +17,37 @@ platform="linux-${arch}"
 
 # Get latest version and download
 version=$(curl -fsSL "$GCS_BUCKET/latest")
-mkdir -p /opt/claude-code
 
-curl -fsSL -o /opt/claude-code/claude "$GCS_BUCKET/$version/$platform/claude"
-chmod +x /opt/claude-code/claude
+# Install for sandfire user using official layout:
+# - Binary at ~/.local/share/claude/versions/{version}
+# - Symlink at ~/.local/bin/claude -> binary (we use claude-bin for wrapper)
+SANDFIRE_HOME="/home/sandfire"
+CLAUDE_VERSIONS_DIR="${SANDFIRE_HOME}/.local/share/claude/versions"
+CLAUDE_BIN_DIR="${SANDFIRE_HOME}/.local/bin"
 
-# Create symlink so claude-bin is in PATH
-ln -sf /opt/claude-code/claude /usr/local/bin/claude-bin
+mkdir -p "$CLAUDE_VERSIONS_DIR"
+mkdir -p "$CLAUDE_BIN_DIR"
 
-# Create wrapper script that adds --dangerously-skip-permissions by default
-cat > /usr/local/bin/claude << 'EOF'
+# Download binary to versions directory (official location)
+curl -fsSL -o "${CLAUDE_VERSIONS_DIR}/${version}" "$GCS_BUCKET/$version/$platform/claude"
+chmod +x "${CLAUDE_VERSIONS_DIR}/${version}"
+
+# Create claude-bin symlink pointing to the versioned binary (for wrapper to call)
+ln -sf "${CLAUDE_VERSIONS_DIR}/${version}" "${CLAUDE_BIN_DIR}/claude-bin"
+
+# Create wrapper script at the official claude location
+# This satisfies Claude's self-check while adding --dangerously-skip-permissions
+cat > "${CLAUDE_BIN_DIR}/claude" << 'EOF'
 #!/bin/bash
 # Claude Code wrapper for sandfire VMs
 # Automatically adds --dangerously-skip-permissions for isolated VM environment
-exec /usr/local/bin/claude-bin --dangerously-skip-permissions "$@"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+exec "${SCRIPT_DIR}/claude-bin" --dangerously-skip-permissions "$@"
 EOF
-chmod +x /usr/local/bin/claude
+chmod +x "${CLAUDE_BIN_DIR}/claude"
+
+# Set ownership for sandfire user
+chown -R sandfire:sandfire "${SANDFIRE_HOME}/.local"
 
 # Create script to fetch Claude credentials from MMDS
 cat > /usr/local/bin/sandfire-claude-credentials.sh << 'SCRIPT'
