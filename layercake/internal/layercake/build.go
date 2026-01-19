@@ -1,12 +1,14 @@
 package layercake
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Builder handles building layers
@@ -211,6 +213,11 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 		return err
 	}
 
+	// Clean up any stale mounts from interrupted builds
+	if err := unmountIfMounted(layer.RootfsPath()); err != nil {
+		return fmt.Errorf("failed to clean up stale mounts: %w", err)
+	}
+
 	fmt.Println("Mounting rootfs...")
 	cmd := exec.Command("mount", "-o", "loop", layer.RootfsPath(), mountDir)
 	cmd.Stdout = os.Stdout
@@ -298,6 +305,11 @@ func (b *Builder) createExt4Image(layer *Layer, sourceDir string) error {
 	}
 	defer os.RemoveAll(mountDir)
 
+	// Clean up any stale mounts from interrupted builds
+	if err := unmountIfMounted(rootfsPath); err != nil {
+		return fmt.Errorf("failed to clean up stale mounts: %w", err)
+	}
+
 	cmd = exec.Command("mount", "-o", "loop", rootfsPath, mountDir)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to mount new image: %w", err)
@@ -364,6 +376,72 @@ func downloadFile(url, dest string) error {
 
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+// unmountIfMounted checks if a file (e.g., rootfs.ext4) is currently mounted
+// via a loop device and unmounts it. This handles stale mounts from interrupted builds.
+func unmountIfMounted(devicePath string) error {
+	absPath, err := filepath.Abs(devicePath)
+	if err != nil {
+		return err
+	}
+
+	// Use losetup -j to find loop devices associated with this file
+	out, err := exec.Command("losetup", "-j", absPath).Output()
+	if err != nil {
+		// losetup returns error if no loop device found, which is fine
+		return nil
+	}
+
+	// Parse output like: /dev/loop0: []: (/path/to/file)
+	// There may be multiple loop devices
+	var loopDevices []string
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if idx := strings.Index(line, ":"); idx > 0 {
+			loopDevices = append(loopDevices, line[:idx])
+		}
+	}
+
+	if len(loopDevices) == 0 {
+		return nil
+	}
+
+	// Read /proc/mounts to find mount points for these loop devices
+	file, err := os.Open("/proc/mounts")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var mountPoints []string
+	scanner = bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 {
+			for _, dev := range loopDevices {
+				if fields[0] == dev {
+					mountPoints = append(mountPoints, fields[1])
+				}
+			}
+		}
+	}
+
+	// Unmount each mount point
+	for _, mp := range mountPoints {
+		fmt.Printf("Cleaning up stale mount at %s...\n", mp)
+		if err := exec.Command("umount", mp).Run(); err != nil {
+			return fmt.Errorf("failed to unmount stale mount at %s: %w", mp, err)
+		}
+	}
+
+	// Detach any remaining loop devices (in case they weren't mounted)
+	for _, dev := range loopDevices {
+		exec.Command("losetup", "-d", dev).Run()
+	}
+
+	return nil
 }
 
 // copyFile copies a file
