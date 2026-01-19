@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +26,26 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
+		fmt.Println(`Sandfire - VM Management Service
+
+Sandfire is a VM management service that uses Firecracker VMM for fast,
+secure microVM creation. It provides a simple HTTP API for managing
+virtual machines with automatic networking via NAT.
+
+Usage: sandfire
+
+The server listens on port 9000 and stores data in ./data/
+
+Environment variables:
+  SANDFIRE_DOMAIN        Base domain for VMs (default: sand.studer.dev)
+  CLOUDFLARE_API_TOKEN   Cloudflare API token for certificate management
+  SANDFIRE_ACME_STAGING  Set to "1" to use ACME staging environment
+
+Use the scripts in scripts/ to interact with the server.`)
+		os.Exit(0)
+	}
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting Sandfire VM Manager...")
 
