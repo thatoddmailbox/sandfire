@@ -421,6 +421,32 @@ func (m *Manager) CleanupVM(vmID string) error {
 	return os.RemoveAll(vmDir)
 }
 
+// ResetVMDisk replaces the VM's rootfs with a fresh copy from the base OS image.
+// The VM must be stopped before calling this method.
+func (m *Manager) ResetVMDisk(vmID string, img *db.OSImage) error {
+	vmDir := filepath.Join(m.dataDir, "vms", vmID)
+	dstRootfs := filepath.Join(vmDir, "rootfs.ext4")
+
+	// Remove the existing rootfs
+	if err := os.Remove(dstRootfs); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove old rootfs: %w", err)
+	}
+
+	// Copy fresh rootfs from base image using reflink if supported
+	cmd := exec.Command("cp", "--reflink=auto", img.RootfsPath, dstRootfs)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("copy rootfs: %w", err)
+	}
+
+	// Make writable
+	if err := os.Chmod(dstRootfs, 0644); err != nil {
+		return fmt.Errorf("chmod rootfs: %w", err)
+	}
+
+	log.Printf("Reset disk for VM %s from image %s", vmID, img.ID)
+	return nil
+}
+
 func (m *Manager) StopAllVMs() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

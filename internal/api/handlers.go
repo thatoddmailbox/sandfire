@@ -203,6 +203,42 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleResetVMDisk(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	vm, err := s.db.GetVM(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if vm == nil {
+		writeError(w, http.StatusNotFound, "vm not found")
+		return
+	}
+	if vm.State != "stopped" {
+		writeError(w, http.StatusBadRequest, "vm must be stopped to reset disk")
+		return
+	}
+
+	img, err := s.db.GetOSImage(vm.OSImageID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if img == nil {
+		writeError(w, http.StatusInternalServerError, "os image not found")
+		return
+	}
+
+	if err := s.vmManager.ResetVMDisk(id, img); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to reset VM disk: "+err.Error())
+		return
+	}
+
+	vm, _ = s.db.GetVM(id)
+	writeJSON(w, http.StatusOK, vm)
+}
+
 func (s *Server) handleStartVM(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 

@@ -42,6 +42,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/vms/{id}", s.handleDeleteVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/start", s.handleStartVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/stop", s.handleStopVM)
+	s.mux.HandleFunc("POST /api/vms/{id}/reset-disk", s.handleResetVMDisk)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
