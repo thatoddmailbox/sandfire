@@ -495,6 +495,10 @@ const indexHTML = `<!DOCTYPE html>
             document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
         }
 
+        function isAnyDropdownOpen() {
+            return document.querySelector('.dropdown-content.show') !== null;
+        }
+
         // Close dropdowns when clicking outside
         document.addEventListener('click', closeAllDropdowns);
 
@@ -555,8 +559,12 @@ const indexHTML = `<!DOCTYPE html>
         loadOSImages();
         loadVMs();
 
-        // Auto-refresh every 5 seconds
-        setInterval(loadVMs, 5000);
+        // Auto-refresh every 5 seconds (skip if dropdown is open)
+        setInterval(() => {
+            if (!isAnyDropdownOpen()) {
+                loadVMs();
+            }
+        }, 5000);
     </script>
 </body>
 </html>`
