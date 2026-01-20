@@ -185,5 +185,97 @@ systemctl enable caddy
 # Generate initial Caddyfile
 /usr/local/bin/sandfire-generate-caddyfile.sh
 
+# Create empty config-templates file (other layers can append to this)
+touch /etc/sandfire/config-templates
+
+# Create the config templating script
+# This processes config files with #sandfire:template= markers, replacing {{DOMAIN}}
+# with the actual domain from /etc/sandfire/domain
+cat > /usr/local/bin/sandfire-template-config.sh << 'SCRIPT'
+#!/bin/bash
+# Regenerates config values marked with #sandfire:template= comments
+# Format: KEY = "old_value" #sandfire:template=template_pattern
+# Result: KEY = "new_value" #sandfire:template=template_pattern
+
+set -e
+
+DOMAIN_FILE="/etc/sandfire/domain"
+CONFIG_LIST="/etc/sandfire/config-templates"
+
+if [ ! -f "$DOMAIN_FILE" ]; then
+    echo "Warning: No domain file found at $DOMAIN_FILE"
+    exit 0
+fi
+
+DOMAIN=$(cat "$DOMAIN_FILE")
+if [ -z "$DOMAIN" ]; then
+    echo "Warning: Domain file is empty"
+    exit 0
+fi
+
+if [ ! -f "$CONFIG_LIST" ]; then
+    echo "No config templates file found"
+    exit 0
+fi
+
+while read -r config_path || [ -n "$config_path" ]; do
+    [[ -z "$config_path" || "$config_path" =~ ^# ]] && continue
+    if [ ! -f "$config_path" ]; then
+        echo "Warning: Config file not found: $config_path"
+        continue
+    fi
+
+    echo "Processing: $config_path"
+
+    # Capture original ownership before modifying
+    original_owner=$(stat -c '%U:%G' "$config_path" 2>/dev/null || echo "")
+
+    # Process lines with #sandfire:template= marker
+    tmp_file=$(mktemp)
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^([^=]+)=.*\#sandfire:template=(.+)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            template="${BASH_REMATCH[2]}"
+            # Replace {{DOMAIN}} in template with actual domain
+            new_value="${template//\{\{DOMAIN\}\}/$DOMAIN}"
+            echo "${key}= ${new_value} #sandfire:template=${template}"
+        else
+            echo "$line"
+        fi
+    done < "$config_path" > "$tmp_file"
+
+    mv "$tmp_file" "$config_path"
+
+    # Restore original ownership
+    if [ -n "$original_owner" ]; then
+        chown "$original_owner" "$config_path" 2>/dev/null || true
+    fi
+
+done < "$CONFIG_LIST"
+
+echo "Config templating complete for domain: $DOMAIN"
+SCRIPT
+
+chmod +x /usr/local/bin/sandfire-template-config.sh
+
+# Create systemd service for config templating
+# This runs after MMDS fetches the domain, but before application services start
+cat > /etc/systemd/system/sandfire-template-config.service << 'EOF'
+[Unit]
+Description=Template config files with VM domain
+After=sandfire-mmds-motd.service
+Wants=sandfire-mmds-motd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sandfire-template-config.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable sandfire-template-config
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
