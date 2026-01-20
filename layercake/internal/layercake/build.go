@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Builder handles building layers
@@ -198,6 +199,12 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 		return fmt.Errorf("parent layer %s is not built", layer.Parent)
 	}
 
+	// Clean up any stale mounts from interrupted builds BEFORE copying
+	// (copying to a mounted file will fail)
+	if err := unmountIfMounted(layer.RootfsPath()); err != nil {
+		return fmt.Errorf("failed to clean up stale mounts: %w", err)
+	}
+
 	// Copy parent rootfs
 	fmt.Printf("Copying rootfs from parent %s...\n", layer.Parent)
 	if err := copyFile(parent.RootfsPath(), layer.RootfsPath()); err != nil {
@@ -216,11 +223,6 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 	mountDir := filepath.Join(workDir, "mnt")
 	if err := os.MkdirAll(mountDir, 0755); err != nil {
 		return err
-	}
-
-	// Clean up any stale mounts from interrupted builds
-	if err := unmountIfMounted(layer.RootfsPath()); err != nil {
-		return fmt.Errorf("failed to clean up stale mounts: %w", err)
 	}
 
 	fmt.Println("Mounting rootfs...")
@@ -455,6 +457,7 @@ func downloadFile(url, dest string) error {
 
 // unmountIfMounted checks if a file (e.g., rootfs.ext4) is currently mounted
 // via a loop device and unmounts it. This handles stale mounts from interrupted builds.
+// It also handles nested mounts (e.g., bind mounts inside the loop mount).
 func unmountIfMounted(devicePath string) error {
 	absPath, err := filepath.Abs(devicePath)
 	if err != nil {
@@ -490,23 +493,36 @@ func unmountIfMounted(devicePath string) error {
 	}
 	defer file.Close()
 
-	var mountPoints []string
+	var loopMountPoints []string
 	scanner = bufio.NewScanner(file)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) >= 2 {
 			for _, dev := range loopDevices {
 				if fields[0] == dev {
-					mountPoints = append(mountPoints, fields[1])
+					loopMountPoints = append(loopMountPoints, fields[1])
 				}
 			}
 		}
 	}
 
-	// Unmount each mount point
-	for _, mp := range mountPoints {
+	// For each loop mount point, find any nested mounts (like bind mounts inside)
+	// and collect all mount points that need to be unmounted
+	var allMountPoints []string
+	for _, loopMP := range loopMountPoints {
+		// Re-read /proc/mounts to find nested mounts
+		nestedMounts, err := findNestedMounts(loopMP)
+		if err != nil {
+			return fmt.Errorf("failed to find nested mounts: %w", err)
+		}
+		allMountPoints = append(allMountPoints, nestedMounts...)
+		allMountPoints = append(allMountPoints, loopMP)
+	}
+
+	// Unmount deepest first (array is already sorted: nested mounts deepest-first, then loop mount)
+	for _, mp := range allMountPoints {
 		fmt.Printf("Cleaning up stale mount at %s...\n", mp)
-		if err := exec.Command("umount", mp).Run(); err != nil {
+		if err := robustUnmount(mp); err != nil {
 			return fmt.Errorf("failed to unmount stale mount at %s: %w", mp, err)
 		}
 	}
@@ -517,6 +533,63 @@ func unmountIfMounted(devicePath string) error {
 	}
 
 	return nil
+}
+
+// robustUnmount attempts to unmount a mount point, killing any processes
+// that may be holding it busy if the first attempt fails.
+func robustUnmount(mountPoint string) error {
+	// First attempt: simple unmount
+	if err := exec.Command("umount", mountPoint).Run(); err == nil {
+		return nil
+	}
+
+	// If that failed, there may be processes using the mount point.
+	// Use fuser to kill them.
+	fmt.Printf("Mount busy, killing processes using %s and trying again...\n", mountPoint)
+	exec.Command("fuser", "-km", mountPoint).Run() // -k kills, -m specifies mount point
+
+	// Brief pause to let processes die
+	time.Sleep(100 * time.Millisecond)
+
+	// Second attempt
+	if err := exec.Command("umount", mountPoint).Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// findNestedMounts finds all mounts that are under the given mount point
+// Returns them sorted by path length (deepest first)
+func findNestedMounts(parentMount string) ([]string, error) {
+	file, err := os.Open("/proc/mounts")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var nested []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 {
+			mountPoint := fields[1]
+			// Check if this mount is under the parent (but not the parent itself)
+			if mountPoint != parentMount && strings.HasPrefix(mountPoint, parentMount+"/") {
+				nested = append(nested, mountPoint)
+			}
+		}
+	}
+
+	// Sort by path length descending (deepest first)
+	for i := 0; i < len(nested)-1; i++ {
+		for j := i + 1; j < len(nested); j++ {
+			if len(nested[j]) > len(nested[i]) {
+				nested[i], nested[j] = nested[j], nested[i]
+			}
+		}
+	}
+
+	return nested, nil
 }
 
 // getRootfsUsage returns used and total space in bytes for an ext4 filesystem
