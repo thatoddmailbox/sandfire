@@ -146,12 +146,16 @@ func (e *Exporter) exportLayer(layer *Layer, base *Layer, db *sql.DB) error {
 		return fmt.Errorf("failed to copy kernel: %w", err)
 	}
 
+	// Calculate rootfs size in GB (round up to nearest GB)
+	rootfsSizeGB := (layer.RootfsSizeMB + 1023) / 1024
+	suggestedRamMB := 512
+
 	// Register in database
 	fmt.Printf("  Registering in database...\n")
 	_, err := db.Exec(`
-		INSERT OR REPLACE INTO os_images (id, name, kernel_path, rootfs_path)
-		VALUES (?, ?, ?, ?)
-	`, exportID, layer.Name, targetKernel, targetRootfs)
+		INSERT OR REPLACE INTO os_images (id, name, kernel_path, rootfs_path, rootfs_size_gb, suggested_ram_mb)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, exportID, layer.Name, targetKernel, targetRootfs, rootfsSizeGB, suggestedRamMB)
 	if err != nil {
 		return fmt.Errorf("failed to register in database: %w", err)
 	}

@@ -9,11 +9,13 @@ import (
 )
 
 type OSImage struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	KernelPath string    `json:"kernel_path"`
-	RootfsPath string    `json:"rootfs_path"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	KernelPath     string    `json:"kernel_path"`
+	RootfsPath     string    `json:"rootfs_path"`
+	RootfsSizeGB   int       `json:"rootfs_size_gb"`
+	SuggestedRamMB int       `json:"suggested_ram_mb"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type VM struct {
@@ -34,7 +36,7 @@ type VM struct {
 // OS Image operations
 
 func (db *DB) ListOSImages() ([]OSImage, error) {
-	rows, err := db.Query(`SELECT id, name, kernel_path, rootfs_path, created_at FROM os_images ORDER BY name`)
+	rows, err := db.Query(`SELECT id, name, kernel_path, rootfs_path, rootfs_size_gb, suggested_ram_mb, created_at FROM os_images ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query os_images: %w", err)
 	}
@@ -43,7 +45,7 @@ func (db *DB) ListOSImages() ([]OSImage, error) {
 	var images []OSImage
 	for rows.Next() {
 		var img OSImage
-		if err := rows.Scan(&img.ID, &img.Name, &img.KernelPath, &img.RootfsPath, &img.CreatedAt); err != nil {
+		if err := rows.Scan(&img.ID, &img.Name, &img.KernelPath, &img.RootfsPath, &img.RootfsSizeGB, &img.SuggestedRamMB, &img.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan os_image: %w", err)
 		}
 		images = append(images, img)
@@ -53,8 +55,8 @@ func (db *DB) ListOSImages() ([]OSImage, error) {
 
 func (db *DB) GetOSImage(id string) (*OSImage, error) {
 	var img OSImage
-	err := db.QueryRow(`SELECT id, name, kernel_path, rootfs_path, created_at FROM os_images WHERE id = ?`, id).
-		Scan(&img.ID, &img.Name, &img.KernelPath, &img.RootfsPath, &img.CreatedAt)
+	err := db.QueryRow(`SELECT id, name, kernel_path, rootfs_path, rootfs_size_gb, suggested_ram_mb, created_at FROM os_images WHERE id = ?`, id).
+		Scan(&img.ID, &img.Name, &img.KernelPath, &img.RootfsPath, &img.RootfsSizeGB, &img.SuggestedRamMB, &img.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -64,10 +66,10 @@ func (db *DB) GetOSImage(id string) (*OSImage, error) {
 	return &img, nil
 }
 
-func (db *DB) CreateOSImage(name, kernelPath, rootfsPath string) (*OSImage, error) {
+func (db *DB) CreateOSImage(name, kernelPath, rootfsPath string, rootfsSizeGB, suggestedRamMB int) (*OSImage, error) {
 	id := uuid.New().String()
-	_, err := db.Exec(`INSERT INTO os_images (id, name, kernel_path, rootfs_path) VALUES (?, ?, ?, ?)`,
-		id, name, kernelPath, rootfsPath)
+	_, err := db.Exec(`INSERT INTO os_images (id, name, kernel_path, rootfs_path, rootfs_size_gb, suggested_ram_mb) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, name, kernelPath, rootfsPath, rootfsSizeGB, suggestedRamMB)
 	if err != nil {
 		return nil, fmt.Errorf("insert os_image: %w", err)
 	}

@@ -280,7 +280,7 @@ const indexHTML = `<!DOCTYPE html>
 
     <script>
         const API = '/api';
-        let osImageMap = {};
+        let osImages = {};
 
         async function fetchJSON(url, options = {}) {
             const res = await fetch(url, {
@@ -312,9 +312,9 @@ const indexHTML = `<!DOCTYPE html>
                 const images = await fetchJSON(API + '/os-images');
                 const select = document.getElementById('os_image_id');
                 select.innerHTML = '<option value="">Select an image...</option>';
-                osImageMap = {};
+                osImages = {};
                 images.forEach(img => {
-                    osImageMap[img.id] = img.name;
+                    osImages[img.id] = img;
                     const opt = document.createElement('option');
                     opt.value = img.id;
                     opt.textContent = img.name + ' (' + img.id + ')';
@@ -324,6 +324,14 @@ const indexHTML = `<!DOCTYPE html>
                 showError('Failed to load OS images: ' + e.message);
             }
         }
+
+        document.getElementById('os_image_id').addEventListener('change', function() {
+            const img = osImages[this.value];
+            if (img) {
+                document.getElementById('disk_size_gb').value = img.rootfs_size_gb;
+                document.getElementById('ram_mb').value = img.suggested_ram_mb;
+            }
+        });
 
         async function loadVMs() {
             try {
@@ -351,7 +359,7 @@ const indexHTML = `<!DOCTYPE html>
                     ? '<span class="ip-address">' + escapeHtml(vm.ip_address) + '</span>'
                     : '<span class="no-ip">-</span>';
                 const specs = vm.vcpu_count + ' vCPU, ' + vm.ram_mb + ' MB RAM, ' + vm.disk_size_gb + ' GB';
-                const osImage = osImageMap[vm.os_image_id] || vm.os_image_id;
+                const osImage = osImages[vm.os_image_id]?.name || vm.os_image_id;
 
                 html += '<tr data-id="' + escapeHtml(vm.id) + '">';
                 html += '<td><strong>' + escapeHtml(vm.name) + '</strong><br><small style="color:#999"><a href="https://' + escapeHtml(vm.id) + '.' + window.location.hostname + '" target="_blank" style="color:#999;text-decoration:none">' + escapeHtml(vm.id) + '</a></small></td>';

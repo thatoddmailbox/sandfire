@@ -45,6 +45,8 @@ func (db *DB) migrate() error {
 			name TEXT NOT NULL,
 			kernel_path TEXT NOT NULL,
 			rootfs_path TEXT NOT NULL,
+			rootfs_size_gb INTEGER NOT NULL DEFAULT 8,
+			suggested_ram_mb INTEGER NOT NULL DEFAULT 512,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS vms (
