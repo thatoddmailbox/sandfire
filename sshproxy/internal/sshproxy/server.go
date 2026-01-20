@@ -33,6 +33,20 @@ type ptyRequestMsg struct {
 	Modes    ssh.TerminalModes
 }
 
+// directTCPIPData contains the data from a direct-tcpip channel open request
+type directTCPIPData struct {
+	DestHost   string
+	DestPort   uint32
+	OrigHost   string
+	OrigPort   uint32
+}
+
+// connState tracks per-connection state including the VM client for port forwarding
+type connState struct {
+	mu       sync.Mutex
+	vmClient *ssh.Client
+}
+
 // Server is the SSH proxy server
 type Server struct {
 	hostKey    ssh.Signer
@@ -145,24 +159,31 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 	// Discard global requests
 	go ssh.DiscardRequests(reqs)
 
+	// Connection state for tracking VM client (for port forwarding)
+	state := &connState{}
+
 	// Handle channels
 	for newChannel := range chans {
-		if newChannel.ChannelType() != "session" {
+		switch newChannel.ChannelType() {
+		case "session":
+			channel, requests, err := newChannel.Accept()
+			if err != nil {
+				log.Printf("Could not accept channel: %v", err)
+				continue
+			}
+			go s.handleSession(sshConn, channel, requests, state)
+
+		case "direct-tcpip":
+			// Local port forwarding (-L)
+			go s.handleDirectTCPIP(newChannel, state)
+
+		default:
 			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
-			continue
 		}
-
-		channel, requests, err := newChannel.Accept()
-		if err != nil {
-			log.Printf("Could not accept channel: %v", err)
-			continue
-		}
-
-		go s.handleSession(sshConn, channel, requests)
 	}
 }
 
-func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, requests <-chan *ssh.Request) {
+func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, requests <-chan *ssh.Request, state *connState) {
 	defer channel.Close()
 
 	var execCmd string
@@ -185,12 +206,12 @@ func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, req
 			req.Reply(true, nil)
 			cmd := strings.TrimSpace(execCmd)
 			// Run the command and exit - direct exec mode should not fall into interactive shell
-			s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests)
+			s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests, state)
 			return
 
 		case "shell":
 			req.Reply(true, nil)
-			s.handleInteractiveShell(sshConn, channel, ptyReq, agentForwarding, requests)
+			s.handleInteractiveShell(sshConn, channel, ptyReq, agentForwarding, requests, state)
 			return
 
 		case "pty-req":
@@ -270,7 +291,7 @@ func parseTerminalModes(data []byte) ssh.TerminalModes {
 	return modes
 }
 
-func (s *Server) handleInteractiveShell(sshConn *ssh.ServerConn, channel ssh.Channel, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) {
+func (s *Server) handleInteractiveShell(sshConn *ssh.ServerConn, channel ssh.Channel, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) {
 	// Drain any remaining requests in background
 	go func() {
 		for req := range requests {
@@ -349,12 +370,12 @@ func (s *Server) handleInteractiveShell(sshConn *ssh.ServerConn, channel ssh.Cha
 								proxyDone = make(chan struct{})
 								go func(vmID string, input chan []byte, done chan struct{}) {
 									defer close(done)
-									s.handleConnectWithInput(sshConn, channel, vmID, ptyReq, agentForwarding, input)
+									s.handleConnectWithInput(sshConn, channel, vmID, ptyReq, agentForwarding, input, state)
 								}(parts[1], proxyInput, proxyDone)
 								continue inputLoop
 							}
 
-							if !s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests) {
+							if !s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests, state) {
 								return
 							}
 						}
@@ -415,7 +436,7 @@ func (s *Server) printWelcome(channel ssh.Channel) {
 }
 
 // handleCommand handles a command. Returns false if the session should end.
-func (s *Server) handleCommand(sshConn *ssh.ServerConn, channel ssh.Channel, cmd string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
+func (s *Server) handleCommand(sshConn *ssh.ServerConn, channel ssh.Channel, cmd string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) bool {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return true
@@ -435,7 +456,7 @@ func (s *Server) handleCommand(sshConn *ssh.ServerConn, channel ssh.Channel, cmd
 			fmt.Fprintf(channel, "Usage: connect <vm-id>\r\n")
 			return true
 		}
-		s.handleConnect(sshConn, channel, parts[1], ptyReq, agentForwarding, requests)
+		s.handleConnect(sshConn, channel, parts[1], ptyReq, agentForwarding, requests, state)
 		return true // Always continue shell after connect (success or failure)
 
 	default:
@@ -476,7 +497,7 @@ func (s *Server) handleList(channel ssh.Channel) {
 }
 
 // handleConnectWithInput handles connect command with input provided via channel
-func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte) {
+func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
 	// Look up the VM
 	vm, err := s.apiClient.GetVM(vmID)
 	if err != nil {
@@ -503,10 +524,10 @@ func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Cha
 
 	// Connect to the VM's SSH server
 	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
-	s.proxySSHWithInput(sshConn, channel, vmAddr, ptyReq, agentForwarding, input)
+	s.proxySSHWithInput(sshConn, channel, vmAddr, ptyReq, agentForwarding, input, state)
 }
 
-func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte) {
+func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
 	config := &ssh.ClientConfig{
 		User: vmUsername,
 		Auth: []ssh.AuthMethod{
@@ -520,7 +541,18 @@ func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel,
 		fmt.Fprintf(channel, "Failed to connect to VM: %v\r\n", err)
 		return
 	}
-	defer client.Close()
+	defer func() {
+		state.mu.Lock()
+		state.vmClient = nil
+		state.mu.Unlock()
+		client.Close()
+	}()
+
+	// Store the VM client in state for port forwarding
+	state.mu.Lock()
+	state.vmClient = client
+	state.mu.Unlock()
+	log.Printf("VM client stored in state for port forwarding")
 
 	done := make(chan struct{})
 
@@ -640,7 +672,7 @@ func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel,
 }
 
 // handleConnect returns true if a connection was established (session should end after)
-func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
+func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) bool {
 	// Look up the VM
 	vm, err := s.apiClient.GetVM(vmID)
 	if err != nil {
@@ -672,10 +704,10 @@ func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmI
 
 	// Connect to the VM's SSH server
 	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
-	return s.proxySSH(sshConn, channel, vmAddr, ptyReq, agentForwarding, requests)
+	return s.proxySSH(sshConn, channel, vmAddr, ptyReq, agentForwarding, requests, state)
 }
 
-func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request) bool {
+func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) bool {
 	config := &ssh.ClientConfig{
 		User: vmUsername,
 		Auth: []ssh.AuthMethod{
@@ -689,7 +721,18 @@ func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr s
 		fmt.Fprintf(channel, "Failed to connect to VM: %v\r\n", err)
 		return false
 	}
-	defer client.Close()
+	defer func() {
+		state.mu.Lock()
+		state.vmClient = nil
+		state.mu.Unlock()
+		client.Close()
+	}()
+
+	// Store the VM client in state for port forwarding
+	state.mu.Lock()
+	state.vmClient = client
+	state.mu.Unlock()
+	log.Printf("VM client stored in state for port forwarding")
 
 	// Channel to signal when session ends
 	done := make(chan struct{})
@@ -955,4 +998,117 @@ func (s *Server) handleAgentChannel(vmNewChannel ssh.NewChannel, clientConn *ssh
 	case <-copyDone:
 	case <-done:
 	}
+}
+
+// parseDirectTCPIPData parses the payload of a direct-tcpip channel open request
+func parseDirectTCPIPData(payload []byte) (*directTCPIPData, error) {
+	// Format: string dest_host, uint32 dest_port, string orig_host, uint32 orig_port
+	if len(payload) < 4 {
+		return nil, fmt.Errorf("payload too short")
+	}
+
+	data := &directTCPIPData{}
+	offset := 0
+
+	// Read destination host (length-prefixed string)
+	destHostLen := binary.BigEndian.Uint32(payload[offset : offset+4])
+	offset += 4
+	if len(payload) < offset+int(destHostLen)+4 {
+		return nil, fmt.Errorf("payload too short for dest host")
+	}
+	data.DestHost = string(payload[offset : offset+int(destHostLen)])
+	offset += int(destHostLen)
+
+	// Read destination port
+	data.DestPort = binary.BigEndian.Uint32(payload[offset : offset+4])
+	offset += 4
+
+	// Read originator host (length-prefixed string)
+	if len(payload) < offset+4 {
+		return nil, fmt.Errorf("payload too short for orig host length")
+	}
+	origHostLen := binary.BigEndian.Uint32(payload[offset : offset+4])
+	offset += 4
+	if len(payload) < offset+int(origHostLen)+4 {
+		return nil, fmt.Errorf("payload too short for orig host")
+	}
+	data.OrigHost = string(payload[offset : offset+int(origHostLen)])
+	offset += int(origHostLen)
+
+	// Read originator port
+	data.OrigPort = binary.BigEndian.Uint32(payload[offset : offset+4])
+
+	return data, nil
+}
+
+// handleDirectTCPIP handles local port forwarding (-L) requests
+func (s *Server) handleDirectTCPIP(newChannel ssh.NewChannel, state *connState) {
+	// Parse the channel data to get destination
+	data, err := parseDirectTCPIPData(newChannel.ExtraData())
+	if err != nil {
+		log.Printf("Failed to parse direct-tcpip data: %v", err)
+		newChannel.Reject(ssh.ConnectionFailed, "invalid channel data")
+		return
+	}
+
+	log.Printf("Port forward request: %s:%d (from %s:%d)", data.DestHost, data.DestPort, data.OrigHost, data.OrigPort)
+
+	// Check if we have a VM client connection
+	state.mu.Lock()
+	vmClient := state.vmClient
+	state.mu.Unlock()
+
+	if vmClient == nil {
+		log.Printf("Port forward rejected: no VM connection established (use 'connect <vm-id>' first)")
+		newChannel.Reject(ssh.ConnectionFailed, "no VM connection established - connect to a VM first")
+		return
+	}
+
+	// Dial through the VM client to the target
+	targetAddr := fmt.Sprintf("%s:%d", data.DestHost, data.DestPort)
+	targetConn, err := vmClient.Dial("tcp", targetAddr)
+	if err != nil {
+		log.Printf("Failed to dial %s through VM: %v", targetAddr, err)
+		newChannel.Reject(ssh.ConnectionFailed, fmt.Sprintf("failed to connect to %s", targetAddr))
+		return
+	}
+
+	// Accept the channel
+	channel, requests, err := newChannel.Accept()
+	if err != nil {
+		log.Printf("Failed to accept direct-tcpip channel: %v", err)
+		targetConn.Close()
+		return
+	}
+
+	// Discard any requests on this channel
+	go ssh.DiscardRequests(requests)
+
+	log.Printf("Port forward established: %s:%d", data.DestHost, data.DestPort)
+
+	// Bidirectionally copy data between the channel and the target connection
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Channel -> Target
+	go func() {
+		defer wg.Done()
+		io.Copy(targetConn, channel)
+		// Signal EOF to target
+		if tc, ok := targetConn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+	}()
+
+	// Target -> Channel
+	go func() {
+		defer wg.Done()
+		io.Copy(channel, targetConn)
+		channel.CloseWrite()
+	}()
+
+	wg.Wait()
+	channel.Close()
+	targetConn.Close()
+	log.Printf("Port forward closed: %s:%d", data.DestHost, data.DestPort)
 }
