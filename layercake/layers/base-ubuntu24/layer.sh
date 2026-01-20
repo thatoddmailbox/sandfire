@@ -150,5 +150,10 @@ WantedBy=multi-user.target
 EOF
 systemctl enable sandfire-mmds-motd.service
 
+# Set up DNS resolution (remove host's resolv.conf from debootstrap)
+rm -f /etc/resolv.conf
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
