@@ -35,6 +35,20 @@ rm -f /tmp/google-chrome.deb
 # Chrome will fall back to basic password storage automatically
 apt-get purge -y gnome-keyring || true
 
+# Configure Chrome policies to skip first-run dialog
+# - Make Chrome default browser
+# - Disable stats reporting to Google
+# - Disable sign-in prompt
+mkdir -p /etc/opt/chrome/policies/managed
+cat > /etc/opt/chrome/policies/managed/sandfire.json << 'EOF'
+{
+    "DefaultBrowserSettingEnabled": true,
+    "MetricsReportingEnabled": false,
+    "BrowserSignin": 0,
+    "SyncDisabled": true
+}
+EOF
+
 # Configure VNC for sandfire user
 SANDFIRE_HOME="/home/sandfire"
 VNC_DIR="${SANDFIRE_HOME}/.vnc"
