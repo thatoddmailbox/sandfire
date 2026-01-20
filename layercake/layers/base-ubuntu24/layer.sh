@@ -36,6 +36,10 @@ systemctl enable systemd-networkd
 systemctl disable systemd-networkd-wait-online.service
 systemctl mask systemd-networkd-wait-online.service
 
+# Set timezone
+ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+echo "America/New_York" > /etc/timezone
+
 # Set hostname
 echo "sandfire-vm" > /etc/hostname
 
