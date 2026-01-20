@@ -69,6 +69,22 @@ func getBuildStatusCached(layer *Layer, graph *LayerGraph, cache map[string]*Bui
 		return status, nil
 	}
 
+	// Check if layer.conf has changed
+	currentConfigHash, err := hashFile(layer.ConfigPath())
+	if err != nil {
+		status.Stale = true
+		status.StaleReason = fmt.Sprintf("cannot hash layer.conf: %v", err)
+		cache[layer.ID] = status
+		return status, nil
+	}
+
+	if currentConfigHash != savedHash.ConfigHash {
+		status.Stale = true
+		status.StaleReason = "layer.conf has changed"
+		cache[layer.ID] = status
+		return status, nil
+	}
+
 	// Check parent status (for non-base layers)
 	if !layer.IsBase() {
 		parent := graph.Get(layer.Parent)
@@ -120,6 +136,7 @@ func getBuildStatusCached(layer *Layer, graph *LayerGraph, cache map[string]*Bui
 // BuildHash stores information about a build
 type BuildHash struct {
 	ScriptHash string
+	ConfigHash string
 	BuildTime  time.Time
 }
 
@@ -142,6 +159,8 @@ func readBuildHash(path string) (*BuildHash, error) {
 		switch parts[0] {
 		case "SCRIPT_HASH":
 			hash.ScriptHash = parts[1]
+		case "CONFIG_HASH":
+			hash.ConfigHash = parts[1]
 		case "BUILD_TIME":
 			if t, err := time.Parse(time.RFC3339, parts[1]); err == nil {
 				hash.BuildTime = t
@@ -158,8 +177,13 @@ func WriteBuildHash(layer *Layer) error {
 		return fmt.Errorf("failed to hash layer.sh: %w", err)
 	}
 
-	content := fmt.Sprintf("SCRIPT_HASH=%s\nBUILD_TIME=%s\n",
-		scriptHash, time.Now().UTC().Format(time.RFC3339))
+	configHash, err := hashFile(layer.ConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed to hash layer.conf: %w", err)
+	}
+
+	content := fmt.Sprintf("SCRIPT_HASH=%s\nCONFIG_HASH=%s\nBUILD_TIME=%s\n",
+		scriptHash, configHash, time.Now().UTC().Format(time.RFC3339))
 
 	return os.WriteFile(layer.BuildHashPath(), []byte(content), 0644)
 }

@@ -158,6 +158,11 @@ func (l *Layer) ScriptPath() string {
 	return filepath.Join(l.Dir, "layer.sh")
 }
 
+// ConfigPath returns the path to the layer.conf file
+func (l *Layer) ConfigPath() string {
+	return filepath.Join(l.Dir, "layer.conf")
+}
+
 // BuildHashPath returns the path to the .build-hash file
 func (l *Layer) BuildHashPath() string {
 	return filepath.Join(l.Dir, ".build-hash")
