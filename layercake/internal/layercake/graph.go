@@ -178,3 +178,36 @@ func (g *LayerGraph) GetBase() *Layer {
 	}
 	return nil
 }
+
+// GetEffectiveSuggestedRamMB returns the suggested RAM for a layer, taking inheritance into account.
+// If a layer doesn't specify SUGGESTED_RAM_MB, it inherits from its parent.
+// If a layer specifies a value less than its parent's, a warning is printed and the parent's value is used.
+// The default for base layers without a specified value is 512 MB.
+func (g *LayerGraph) GetEffectiveSuggestedRamMB(id string) int {
+	layer := g.layers[id]
+	if layer == nil {
+		return 512
+	}
+
+	// Get parent's effective RAM (or default 512 for base layers)
+	var parentRam int
+	if layer.Parent == "scratch" {
+		parentRam = 512
+	} else {
+		parentRam = g.GetEffectiveSuggestedRamMB(layer.Parent)
+	}
+
+	// If this layer doesn't specify a value, inherit from parent
+	if layer.SuggestedRamMB == 0 {
+		return parentRam
+	}
+
+	// If this layer specifies a value less than parent, warn and use parent's
+	if layer.SuggestedRamMB < parentRam {
+		fmt.Printf("Warning: layer %s has SUGGESTED_RAM_MB=%d which is less than parent's %d, using parent's value\n",
+			layer.ID, layer.SuggestedRamMB, parentRam)
+		return parentRam
+	}
+
+	return layer.SuggestedRamMB
+}

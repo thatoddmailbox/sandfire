@@ -11,13 +11,14 @@ import (
 
 // Layer represents a single image layer configuration
 type Layer struct {
-	ID           string
-	Name         string
-	Parent       string // "scratch" for base image
-	KernelURL    string // only for base image
-	RootfsSizeMB int
-	Export       bool
-	Dir          string // absolute path to layer directory
+	ID             string
+	Name           string
+	Parent         string // "scratch" for base image
+	KernelURL      string // only for base image
+	RootfsSizeMB   int
+	SuggestedRamMB int // 0 means inherit from parent (default 512 for base)
+	Export         bool
+	Dir            string // absolute path to layer directory
 }
 
 // LoadLayer loads a layer configuration from a directory
@@ -62,6 +63,10 @@ func LoadLayer(dir string) (*Layer, error) {
 		case "ROOTFS_SIZE_MB":
 			if size, err := strconv.Atoi(value); err == nil {
 				layer.RootfsSizeMB = size
+			}
+		case "SUGGESTED_RAM_MB":
+			if ram, err := strconv.Atoi(value); err == nil {
+				layer.SuggestedRamMB = ram
 			}
 		case "EXPORT":
 			layer.Export = strings.ToLower(value) == "true"
