@@ -217,6 +217,9 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 		if err := resizeExt4(layer.RootfsPath(), layer.RootfsSizeMB); err != nil {
 			return fmt.Errorf("failed to resize rootfs: %w", err)
 		}
+	} else if layer.RootfsSizeMB < parent.RootfsSizeMB {
+		fmt.Printf("Warning: rootfs_size %d MB is smaller than parent's %d MB, keeping parent size\n",
+			layer.RootfsSizeMB, parent.RootfsSizeMB)
 	}
 
 	// Mount rootfs
