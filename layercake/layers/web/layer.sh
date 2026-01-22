@@ -64,7 +64,7 @@ if [ -s "$SERVICES_FILE" ]; then
         echo "127.0.0.1   ${name}.localhost # sandfire-managed" >> /etc/hosts
     done < "$SERVICES_FILE"
 
-    # Read services and generate reverse proxy rules
+    # Read services and generate reverse proxy rules (sorted alphabetically)
     SERVICES_HTML=""
 
     while read -r name port || [ -n "$name" ]; do
@@ -83,7 +83,7 @@ EOF
 
         # Build HTML list item (data-service attribute for JS to process)
         SERVICES_HTML="${SERVICES_HTML}        <li><a href=\"#\" data-service=\"${name}\">${name}</a> &rarr; port ${port}</li>\n"
-    done < "$SERVICES_FILE"
+    done < <(sort "$SERVICES_FILE")
 
     # Generate index page with service list
     cat > "$INDEX_DIR/index.html" << EOF
