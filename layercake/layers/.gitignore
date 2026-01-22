@@ -1,3 +1,4 @@
 .build-hash
 rootfs.*
 vmlinux
+layer.secrets
