@@ -298,6 +298,15 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 		}
 	}()
 
+	// Load secrets from layer.secrets if it exists
+	secrets, err := parseSecretsFile(layer.SecretsPath())
+	if err != nil {
+		return fmt.Errorf("failed to parse layer.secrets: %w", err)
+	}
+	if len(secrets) > 0 {
+		fmt.Printf("Loaded %d secret(s) from layer.secrets\n", len(secrets))
+	}
+
 	// Run in chroot
 	cmd := exec.Command("chroot", rootfsDir, "/bin/bash", "/tmp/layer.sh")
 	cmd.Stdout = os.Stdout
@@ -309,6 +318,10 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 	if sshAgentSock != "" {
 		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sshAgentSock)
 	}
+	// Add secrets to environment
+	for key, value := range secrets {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -316,6 +329,51 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 	// Clean up
 	os.Remove(scriptDest)
 	return nil
+}
+
+// parseSecretsFile reads a layer.secrets file and returns key-value pairs.
+// Returns an empty map (not an error) if the file doesn't exist.
+// The file format is simple KEY=value lines, with # for comments.
+func parseSecretsFile(path string) (map[string]string, error) {
+	secrets := make(map[string]string)
+
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return secrets, nil // No secrets file is fine
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse KEY=value
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("line %d: invalid format (expected KEY=value)", lineNum)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		if key == "" {
+			return nil, fmt.Errorf("line %d: empty key", lineNum)
+		}
+
+		secrets[key] = value
+	}
+
+	return secrets, scanner.Err()
 }
 
 // setupSSHAgentForwarding bind-mounts the SSH agent socket into the chroot

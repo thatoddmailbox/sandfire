@@ -172,3 +172,8 @@ func (l *Layer) ConfigPath() string {
 func (l *Layer) BuildHashPath() string {
 	return filepath.Join(l.Dir, ".build-hash")
 }
+
+// SecretsPath returns the path to the layer.secrets file
+func (l *Layer) SecretsPath() string {
+	return filepath.Join(l.Dir, "layer.secrets")
+}
