@@ -22,6 +22,9 @@ apt-get install -y \
 apt-get install -y fonts-symbola
 fc-cache -fv
 
+# Install mesa-utils so we at least have software rendering
+apt-get install -y mesa-utils
+
 # Set xfce4-terminal as default terminal emulator
 update-alternatives --install /usr/bin/x-terminal-emulator x-terminal-emulator /usr/bin/xfce4-terminal 50
 update-alternatives --set x-terminal-emulator /usr/bin/xfce4-terminal
