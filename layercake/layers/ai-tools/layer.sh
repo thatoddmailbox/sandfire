@@ -21,6 +21,10 @@ apt-get install -y \
     screen \
     ripgrep
 
+# Install Node.js and npm
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
+
 # Install Claude Code native binary directly (without running 'claude install' which needs a TTY)
 GCS_BUCKET="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
