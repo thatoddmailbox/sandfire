@@ -59,7 +59,7 @@ su sandfire -c "npx -y @playwright/mcp@latest"
 # Add it to claude code config
 # TODO: should we scope it better? right now adding it to everything...
 CLAUDE_JSON=/home/sandfire/.claude.json
-jq '. + {"mcpServers": {"playwright": {"type": "stdio", "command": "npx", "args": ["@playwright/mcp@latest"], "env": {}}}}' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp"
+jq '. + {"mcpServers": {"playwright": {"type": "stdio", "command": "npx", "args": ["@playwright/mcp@latest", "--allow-unrestricted-file-access"], "env": {}}}}' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp"
 mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
 chown sandfire:sandfire "$CLAUDE_JSON"
 
