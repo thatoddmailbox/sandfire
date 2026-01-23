@@ -211,3 +211,9 @@ Sandfire requires root privileges for:
 - Creating bridge and TAP devices
 - Managing iptables rules
 - Running jailer
+
+## Companion tools
+
+In this same repository are two additional tools that help with using Sandfire VMs:
+* [layercake](./layercake) - build VM root filesystems using multiple "layers", similar to Docker containers
+* [sshproxy](./sshproxy) - provide a single SSH server that can forward connections (and ports) to any running VM
