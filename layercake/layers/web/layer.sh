@@ -277,5 +277,19 @@ EOF
 
 systemctl enable sandfire-template-config
 
+# Teach claude how to find the domain
+cat > /home/sandfire/.claude/CLAUDE.md << 'EOF'
+This environment runs in a Sandfire microVM with a domain pointed to it.
+
+To find the URL for a service:
+1. Read the base domain from `/etc/sandfire/domain`
+2. Prepend the service name with a dot: `{service}.{domain}`
+
+Example: if domain is `vm.example.com` and service is `app`, the URL is `https://app.vm.example.com`
+
+Service names for each project are specified in that project's CLAUDE.md.
+EOF
+chown sandfire:sandfire /home/sandfire/.claude/CLAUDE.md
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
