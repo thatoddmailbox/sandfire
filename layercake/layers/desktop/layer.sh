@@ -52,6 +52,17 @@ cat > /etc/opt/chrome/policies/managed/sandfire.json << 'EOF'
 }
 EOF
 
+# Since we have chrome (and claude from ai-tools) we can also set up playwright
+# Force it to download now so it's cached (run as sandfire so cache is in right place)
+su sandfire -c "npx -y @playwright/mcp@latest"
+
+# Add it to claude code config
+# TODO: should we scope it better? right now adding it to everything...
+CLAUDE_JSON=/home/sandfire/.claude.json
+jq '. + {"mcpServers": {"playwright": {"type": "stdio", "command": "npx", "args": ["@playwright/mcp@latest"], "env": {}}}}' "$CLAUDE_JSON" > "$CLAUDE_JSON.tmp"
+mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
+chown sandfire:sandfire "$CLAUDE_JSON"
+
 # Configure VNC for sandfire user
 SANDFIRE_HOME="/home/sandfire"
 VNC_DIR="${SANDFIRE_HOME}/.vnc"
