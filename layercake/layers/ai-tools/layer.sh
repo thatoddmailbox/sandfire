@@ -70,6 +70,10 @@ chmod +x "${CLAUDE_BIN_DIR}/claude"
 # Set ownership for sandfire user
 chown -R sandfire:sandfire "${SANDFIRE_HOME}/.local"
 
+# Create base .claude.json settings file (child layers can modify this at build time)
+echo '{"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true}' > "${SANDFIRE_HOME}/.claude.json"
+chown sandfire:sandfire "${SANDFIRE_HOME}/.claude.json"
+
 # Create script to fetch Claude credentials from MMDS
 cat > /usr/local/bin/sandfire-claude-credentials.sh << 'SCRIPT'
 #!/bin/bash
@@ -124,10 +128,6 @@ for USER_HOME in /root /home/sandfire; do
         # Write credentials file
         echo "$CREDENTIALS" > "${CLAUDE_DIR}/.credentials.json"
         chmod 600 "${CLAUDE_DIR}/.credentials.json"
-
-        # Write settings file (dark theme, onboarding complete)
-	echo '{"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true}' > "${USER_HOME}/.claude.json"
-        chmod 644 "${USER_HOME}/.claude.json"
 
         # Set ownership if it's the sandfire user's home
         if [ "$USER_HOME" = "/home/sandfire" ]; then
