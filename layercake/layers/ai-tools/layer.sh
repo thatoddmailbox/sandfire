@@ -74,6 +74,11 @@ chown -R sandfire:sandfire "${SANDFIRE_HOME}/.local"
 echo '{"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true}' > "${SANDFIRE_HOME}/.claude.json"
 chown sandfire:sandfire "${SANDFIRE_HOME}/.claude.json"
 
+# Also set some useful settings in the claude settings.json file
+mkdir -p "${SANDFIRE_HOME}/.claude"
+echo '{"cleanupPeriodDays": 99999, "model": "opus"}' > "${SANDFIRE_HOME}/.claude/settings.json"
+chown -R sandfire:sandfire "${SANDFIRE_HOME}/.claude"
+
 # Create script to fetch Claude credentials from MMDS
 cat > /usr/local/bin/sandfire-claude-credentials.sh << 'SCRIPT'
 #!/bin/bash
