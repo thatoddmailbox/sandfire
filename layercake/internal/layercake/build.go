@@ -211,16 +211,15 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 		return fmt.Errorf("failed to copy parent rootfs: %w", err)
 	}
 
-	// Resize if needed
-	if layer.RootfsSizeMB > parent.RootfsSizeMB {
+	// Resize if needed - compare against parent's effective size (which accounts for inheritance)
+	parentEffectiveSize := b.graph.GetEffectiveRootfsSizeMB(layer.Parent)
+	if layer.RootfsSizeMB > parentEffectiveSize {
 		fmt.Printf("Resizing rootfs to %d MB...\n", layer.RootfsSizeMB)
 		if err := resizeExt4(layer.RootfsPath(), layer.RootfsSizeMB); err != nil {
 			return fmt.Errorf("failed to resize rootfs: %w", err)
 		}
-	} else if layer.RootfsSizeMB < parent.RootfsSizeMB {
-		fmt.Printf("Warning: rootfs_size %d MB is smaller than parent's %d MB, keeping parent size\n",
-			layer.RootfsSizeMB, parent.RootfsSizeMB)
 	}
+	// Note: warning for smaller size is handled by GetEffectiveRootfsSizeMB
 
 	// Mount rootfs
 	mountDir := filepath.Join(workDir, "mnt")

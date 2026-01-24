@@ -147,7 +147,9 @@ func (e *Exporter) exportLayer(layer *Layer, base *Layer, db *sql.DB) error {
 	}
 
 	// Calculate rootfs size in GB (round up to nearest GB)
-	rootfsSizeGB := (layer.RootfsSizeMB + 1023) / 1024
+	// Use effective size which accounts for parent inheritance
+	effectiveRootfsSizeMB := e.graph.GetEffectiveRootfsSizeMB(layer.ID)
+	rootfsSizeGB := (effectiveRootfsSizeMB + 1023) / 1024
 	suggestedRamMB := e.graph.GetEffectiveSuggestedRamMB(layer.ID)
 
 	// Register in database

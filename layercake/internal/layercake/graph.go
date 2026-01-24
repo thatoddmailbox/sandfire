@@ -179,6 +179,39 @@ func (g *LayerGraph) GetBase() *Layer {
 	return nil
 }
 
+// GetEffectiveRootfsSizeMB returns the effective rootfs size for a layer, taking inheritance into account.
+// The effective size is the maximum of the layer's configured size and its parent's effective size,
+// since a child layer's rootfs cannot be smaller than its parent's.
+// If a layer specifies a value less than its parent's, a warning is printed.
+// The default for base layers is 2048 MB.
+func (g *LayerGraph) GetEffectiveRootfsSizeMB(id string) int {
+	layer := g.layers[id]
+	if layer == nil {
+		return 2048
+	}
+
+	// For base layers, just return the configured size
+	if layer.Parent == "scratch" {
+		return layer.RootfsSizeMB
+	}
+
+	// Get parent's effective size
+	parentSize := g.GetEffectiveRootfsSizeMB(layer.Parent)
+
+	// Return the larger of parent and child sizes
+	if layer.RootfsSizeMB > parentSize {
+		return layer.RootfsSizeMB
+	}
+
+	// Warn if this layer specifies a smaller size than parent's effective size
+	if layer.RootfsSizeMB < parentSize {
+		fmt.Printf("Warning: layer %s has ROOTFS_SIZE_MB=%d which is less than parent's effective %d, using parent's value\n",
+			layer.ID, layer.RootfsSizeMB, parentSize)
+	}
+
+	return parentSize
+}
+
 // GetEffectiveSuggestedRamMB returns the suggested RAM for a layer, taking inheritance into account.
 // If a layer doesn't specify SUGGESTED_RAM_MB, it inherits from its parent.
 // If a layer specifies a value less than its parent's, a warning is printed and the parent's value is used.
