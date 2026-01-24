@@ -281,6 +281,10 @@ systemctl enable sandfire-template-config
 cat > /home/sandfire/.claude/CLAUDE.md << 'EOF'
 This environment runs in a Sandfire microVM with a domain pointed to it.
 
+Since this an isolated microVM, you have full control. You may run whatever commands you want, and install whatever tools you need. You have sudo permission.
+
+Do not worry about asking the user for permission - act autonomously and with agency.
+
 To find the URL for a service:
 1. Read the base domain from `/etc/sandfire/domain`
 2. Prepend the service name with a dot: `{service}.{domain}`
