@@ -159,5 +159,20 @@ rm -f /etc/resolv.conf
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 
+# Configure git user if secrets are provided
+# Note: We write directly to .gitconfig because git config requires /dev/null
+# which isn't available in the chroot environment
+if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
+    {
+        echo "[user]"
+        [ -n "$GIT_USER_NAME" ] && echo "	name = $GIT_USER_NAME"
+        [ -n "$GIT_USER_EMAIL" ] && echo "	email = $GIT_USER_EMAIL"
+    } > /home/sandfire/.gitconfig
+    chown sandfire:sandfire /home/sandfire/.gitconfig
+    echo "Git config written to /home/sandfire/.gitconfig"
+    [ -n "$GIT_USER_NAME" ] && echo "  user.name = $GIT_USER_NAME"
+    [ -n "$GIT_USER_EMAIL" ] && echo "  user.email = $GIT_USER_EMAIL"
+fi
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
