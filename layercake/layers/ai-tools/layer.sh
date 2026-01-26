@@ -2,7 +2,11 @@
 set -e
 
 # Install AI tools (Claude Code)
-# This layer fetches credentials from MMDS at runtime
+# This layer supports two authentication methods:
+# 1. CLAUDE_CODE_OAUTH_TOKEN in layer.secrets (preferred, lasts a year)
+# 2. Credentials fetched from MMDS at runtime (fallback)
+#
+# You can get a Claude Code OAuth token by running `claude setup-token` and following the instructions.
 
 # Configure NOPASSWD sudo for sudo group
 echo '%sudo ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/sudo-nopasswd
@@ -79,11 +83,29 @@ mkdir -p "${SANDFIRE_HOME}/.claude"
 echo '{"cleanupPeriodDays": 99999, "model": "opus"}' > "${SANDFIRE_HOME}/.claude/settings.json"
 chown -R sandfire:sandfire "${SANDFIRE_HOME}/.claude"
 
+# If CLAUDE_CODE_OAUTH_TOKEN is set (from layer.secrets), write it to /etc/profile.d/
+# so it's available as an environment variable at runtime
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    echo "Configuring Claude Code OAuth token from layer.secrets"
+    cat > /etc/profile.d/claude-oauth.sh << EOF
+# Claude Code OAuth token (configured at build time)
+export CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"
+EOF
+    chmod 644 /etc/profile.d/claude-oauth.sh
+fi
+
 # Create script to fetch Claude credentials from MMDS
 cat > /usr/local/bin/sandfire-claude-credentials.sh << 'SCRIPT'
 #!/bin/bash
 # Fetch Claude Code credentials from Firecracker MMDS
 # This runs at boot to configure Claude Code with host credentials
+# Skipped if CLAUDE_CODE_OAUTH_TOKEN is configured (from layer.secrets)
+
+# Check if OAuth token is configured (via /etc/profile.d/claude-oauth.sh)
+if [ -f /etc/profile.d/claude-oauth.sh ]; then
+    echo "Claude Code OAuth token is configured, skipping MMDS credentials fetch"
+    exit 0
+fi
 
 MMDS_IP="169.254.169.254"
 MMDS_IFACE="eth0"
