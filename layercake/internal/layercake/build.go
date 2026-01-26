@@ -163,6 +163,11 @@ func (b *Builder) buildBaseLayer(layer *Layer, workDir string) error {
 		return fmt.Errorf("layer.sh failed: %w", err)
 	}
 
+	// Write layer identity files
+	if err := writeLayerIdentityFiles(layer, rootfsDir); err != nil {
+		return fmt.Errorf("failed to write layer identity files: %w", err)
+	}
+
 	// Clean up apt cache
 	os.RemoveAll(filepath.Join(rootfsDir, "var/cache/apt/archives"))
 	os.RemoveAll(filepath.Join(rootfsDir, "var/lib/apt/lists"))
@@ -243,6 +248,12 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 	if err := b.runInChroot(layer, mountDir); err != nil {
 		exec.Command("umount", mountDir).Run()
 		return fmt.Errorf("layer.sh failed: %w", err)
+	}
+
+	// Write layer identity files
+	if err := writeLayerIdentityFiles(layer, mountDir); err != nil {
+		exec.Command("umount", mountDir).Run()
+		return fmt.Errorf("failed to write layer identity files: %w", err)
 	}
 
 	// Unmount
@@ -327,6 +338,29 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 
 	// Clean up
 	os.Remove(scriptDest)
+	return nil
+}
+
+// writeLayerIdentityFiles creates /etc/sandfire/layer-id and /etc/sandfire/layer-name
+// in the rootfs directory. These files identify which layer the VM was built from.
+func writeLayerIdentityFiles(layer *Layer, rootfsDir string) error {
+	sandfireDir := filepath.Join(rootfsDir, "etc", "sandfire")
+	if err := os.MkdirAll(sandfireDir, 0755); err != nil {
+		return fmt.Errorf("failed to create /etc/sandfire directory: %w", err)
+	}
+
+	// Write layer-id
+	idPath := filepath.Join(sandfireDir, "layer-id")
+	if err := os.WriteFile(idPath, []byte(layer.ID+"\n"), 0644); err != nil {
+		return fmt.Errorf("failed to write layer-id: %w", err)
+	}
+
+	// Write layer-name
+	namePath := filepath.Join(sandfireDir, "layer-name")
+	if err := os.WriteFile(namePath, []byte(layer.Name+"\n"), 0644); err != nil {
+		return fmt.Errorf("failed to write layer-name: %w", err)
+	}
+
 	return nil
 }
 
