@@ -142,14 +142,20 @@ func (b *Builder) buildBaseLayer(layer *Layer, workDir string) error {
 		return err
 	}
 
-	fmt.Println("Running debootstrap (this may take a while)...")
+	// Use custom mirror if specified, otherwise default to archive.ubuntu.com
+	mirror := os.Getenv("LAYERCAKE_DEBOOTSTRAP_MIRROR")
+	if mirror == "" {
+		mirror = "http://archive.ubuntu.com/ubuntu/"
+	}
+
+	fmt.Printf("Running debootstrap (mirror: %s)...\n", mirror)
 	cmd := exec.Command("debootstrap",
 		"--arch=amd64",
 		"--variant=minbase",
 		"--include=systemd,systemd-sysv,udev,iproute2,iputils-ping,openssh-server,sudo,curl,ca-certificates,passwd,busybox-static,python3,htop,nano,less,git",
 		"noble",
 		rootfsDir,
-		"http://archive.ubuntu.com/ubuntu/",
+		mirror,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

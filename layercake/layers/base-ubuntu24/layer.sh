@@ -159,6 +159,11 @@ rm -f /etc/resolv.conf
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 
+# Reset sources.list to official mirrors (debootstrap may have used a custom mirror)
+cat > /etc/apt/sources.list << 'EOF'
+deb http://archive.ubuntu.com/ubuntu noble main universe
+EOF
+
 # Configure git user if secrets are provided
 # Note: We write directly to .gitconfig because git config requires /dev/null
 # which isn't available in the chroot environment
