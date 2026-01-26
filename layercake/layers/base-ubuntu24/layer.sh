@@ -160,9 +160,16 @@ echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 
 # Reset sources.list to official mirrors (debootstrap may have used a custom mirror)
+# This also adds noble-updates and noble-security so we get updates
 cat > /etc/apt/sources.list << 'EOF'
 deb http://archive.ubuntu.com/ubuntu noble main universe
+deb http://archive.ubuntu.com/ubuntu noble-updates main universe
+deb http://archive.ubuntu.com/ubuntu noble-security main universe
 EOF
+
+# Since we have the new repos we need to update + upgrade now
+apt-get update
+apt-get upgrade -y
 
 # Configure git user if secrets are provided
 if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
