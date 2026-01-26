@@ -71,7 +71,7 @@ chmod +x "${CLAUDE_BIN_DIR}/claude"
 chown -R sandfire:sandfire "${SANDFIRE_HOME}/.local"
 
 # Create base .claude.json settings file (child layers can modify this at build time)
-echo '{"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true}' > "${SANDFIRE_HOME}/.claude.json"
+echo '{"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true, "sonnet45MigrationComplete": true, "sonnet45MigrationTimestamp": 1769408052736}' > "${SANDFIRE_HOME}/.claude.json"
 chown sandfire:sandfire "${SANDFIRE_HOME}/.claude.json"
 
 # Also set some useful settings in the claude settings.json file
