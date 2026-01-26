@@ -115,6 +115,20 @@ func (b *Builder) buildLayer(layer *Layer) error {
 
 	// Create work directory
 	workDir := filepath.Join(b.workDir, layer.ID)
+
+	// Clean up any stale mounts from interrupted builds (e.g., device bind mounts).
+	// This handles cases where the workDir already exists with leftover mounts.
+	mounts, err := findNestedMounts(workDir)
+	if err != nil {
+		return fmt.Errorf("failed to find stale mounts: %w", err)
+	}
+	for _, mp := range mounts {
+		fmt.Printf("Cleaning up stale mount at %s...\n", mp)
+		if err := robustUnmount(mp); err != nil {
+			return fmt.Errorf("failed to unmount stale mount at %s: %w", mp, err)
+		}
+	}
+
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		return fmt.Errorf("failed to create work directory: %w", err)
 	}
@@ -293,6 +307,13 @@ func (b *Builder) runInChroot(layer *Layer, rootfsDir string) error {
 		return err
 	}
 
+	// Set up device bind mounts (needed because /tmp is often mounted with nodev)
+	deviceCleanup, err := b.setupDeviceMounts(rootfsDir)
+	if err != nil {
+		return fmt.Errorf("failed to set up device mounts: %w", err)
+	}
+	defer deviceCleanup()
+
 	// Set up SSH agent forwarding if available
 	var sshCleanup func()
 	sshAgentSock := os.Getenv("SSH_AUTH_SOCK")
@@ -454,6 +475,52 @@ func (b *Builder) setupSSHAgentForwarding(rootfsDir, hostSockPath string) (clean
 	}
 
 	return cleanup, chrootSockPath, nil
+}
+
+// setupDeviceMounts bind-mounts essential device nodes from the host into the chroot.
+// This is necessary because /tmp is often mounted with nodev, which prevents device
+// nodes created by debootstrap from working.
+// Returns a cleanup function and any error.
+func (b *Builder) setupDeviceMounts(rootfsDir string) (cleanup func(), err error) {
+	devices := []string{"null", "zero", "random", "urandom"}
+	var mounted []string
+
+	cleanupMounted := func() {
+		// Unmount in reverse order
+		for i := len(mounted) - 1; i >= 0; i-- {
+			exec.Command("umount", mounted[i]).Run()
+		}
+	}
+
+	for _, dev := range devices {
+		hostDev := "/dev/" + dev
+		chrootDev := filepath.Join(rootfsDir, "dev", dev)
+
+		// Ensure the target exists (debootstrap should have created it, but
+		// for derivative layers or edge cases, create it if missing)
+		if _, statErr := os.Stat(chrootDev); os.IsNotExist(statErr) {
+			if err := os.MkdirAll(filepath.Dir(chrootDev), 0755); err != nil {
+				cleanupMounted()
+				return nil, fmt.Errorf("failed to create /dev directory: %w", err)
+			}
+			f, err := os.Create(chrootDev)
+			if err != nil {
+				cleanupMounted()
+				return nil, fmt.Errorf("failed to create /dev/%s mount target: %w", dev, err)
+			}
+			f.Close()
+		}
+
+		// Bind mount the device
+		cmd := exec.Command("mount", "--bind", hostDev, chrootDev)
+		if err := cmd.Run(); err != nil {
+			cleanupMounted()
+			return nil, fmt.Errorf("failed to bind mount /dev/%s: %w", dev, err)
+		}
+		mounted = append(mounted, chrootDev)
+	}
+
+	return cleanupMounted, nil
 }
 
 // createExt4Image creates an ext4 image from a directory

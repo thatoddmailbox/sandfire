@@ -165,8 +165,6 @@ deb http://archive.ubuntu.com/ubuntu noble main universe
 EOF
 
 # Configure git user if secrets are provided
-# Note: We write directly to .gitconfig because git config requires /dev/null
-# which isn't available in the chroot environment
 if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
     {
         echo "[user]"
