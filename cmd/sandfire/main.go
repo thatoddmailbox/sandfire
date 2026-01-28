@@ -210,7 +210,7 @@ func restoreRunningVMs(database *db.DB, vmManager *vm.Manager) {
 			continue
 		}
 
-		ipAddress, tapDevice, err := vmManager.StartVM(&v, img)
+		ipAddress, tapDevice, err := vmManager.StartVM(&v, img, nil)
 		if err != nil {
 			log.Printf("Warning: failed to restore VM %s: %v", v.ID, err)
 			database.UpdateVMState(v.ID, "error", nil, nil)

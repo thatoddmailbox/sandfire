@@ -203,6 +203,13 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Maximum size for context JSON (64KB)
+const MaxContextSize = 64 * 1024
+
+type startVMRequest struct {
+	Context json.RawMessage `json:"context,omitempty"`
+}
+
 func (s *Server) handleResetVMDisk(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -256,6 +263,24 @@ func (s *Server) handleStartVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse optional request body for context
+	var req startVMRequest
+	if r.ContentLength > 0 {
+		if r.ContentLength > MaxContextSize {
+			writeError(w, http.StatusBadRequest, "context too large (max 64KB)")
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+		// Validate context size (in case Content-Length was not accurate)
+		if len(req.Context) > MaxContextSize {
+			writeError(w, http.StatusBadRequest, "context too large (max 64KB)")
+			return
+		}
+	}
+
 	img, err := s.db.GetOSImage(vm.OSImageID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -266,7 +291,7 @@ func (s *Server) handleStartVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddress, tapDevice, err := s.vmManager.StartVM(vm, img)
+	ipAddress, tapDevice, err := s.vmManager.StartVM(vm, img, req.Context)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to start VM: "+err.Error())
 		return

@@ -52,6 +52,7 @@ type SandfireMetadata struct {
 	VMName            string          `json:"vm_name"`
 	Domain            string          `json:"domain,omitempty"`
 	ClaudeCredentials json.RawMessage `json:"claude_credentials,omitempty"`
+	Context           json.RawMessage `json:"context,omitempty"`
 }
 
 func NewFirecrackerConfig(kernelPath, rootfsPath string, vcpuCount, ramMB int, tapDevice, guestMAC, guestIP string) *FirecrackerConfig {

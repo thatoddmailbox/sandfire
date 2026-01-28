@@ -217,7 +217,7 @@ func (m *Manager) PrepareVMDisk(vmID string, img *db.OSImage) error {
 	return nil
 }
 
-func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice string, err error) {
+func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage) (ipAddress, tapDevice string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -360,7 +360,7 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage) (ipAddress, tapDevice stri
 	// Include Claude credentials if available on the host
 	claudeCredentials := loadClaudeConfig()
 	vmDomain := getVMDomain(vm.ID)
-	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, vmDomain, claudeCredentials); err != nil {
+	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, vmDomain, claudeCredentials, vmContext); err != nil {
 		proc.stop()
 		m.networkMgr.DeleteTap(tapDevice)
 		m.networkMgr.ReleaseIP(ipAddress)
