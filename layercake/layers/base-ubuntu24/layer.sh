@@ -154,6 +154,53 @@ WantedBy=multi-user.target
 EOF
 systemctl enable sandfire-mmds-motd.service
 
+# Add sandfire-get-context script for retrieving ephemeral context from MMDS
+cat > /usr/local/bin/sandfire-get-context << 'SCRIPT'
+#!/bin/bash
+# Retrieve ephemeral context from Firecracker MMDS
+# Usage: sandfire-get-context [jq-path]
+# Examples:
+#   sandfire-get-context              # Output full context JSON
+#   sandfire-get-context .task        # Extract .task field
+#   sandfire-get-context '.data[0]'   # Extract first element of .data array
+
+MMDS_IP="169.254.169.254"
+MMDS_IFACE="eth0"
+
+# Add route to MMDS (link-local address needs explicit route)
+ip route add ${MMDS_IP}/32 dev ${MMDS_IFACE} 2>/dev/null || true
+
+# Get MMDS V2 token
+TOKEN=$(curl -s -X PUT "http://${MMDS_IP}/latest/api/token" \
+    -H "X-metadata-token-ttl-seconds: 300" 2>/dev/null)
+
+if [ -z "$TOKEN" ]; then
+    echo "Error: Could not get MMDS token" >&2
+    exit 1
+fi
+
+# Fetch context from MMDS
+CONTEXT=$(curl -s "http://${MMDS_IP}/sandfire/context" \
+    -H "X-metadata-token: ${TOKEN}" \
+    -H "Accept: application/json" 2>/dev/null)
+
+# Check if context exists and is not null/empty
+if [ -z "$CONTEXT" ] || [ "$CONTEXT" = "null" ]; then
+    echo "Error: No context available" >&2
+    exit 1
+fi
+
+# If jq path argument provided, extract that field
+if [ -n "$1" ]; then
+    echo "$CONTEXT" | jq -e "$1"
+    exit $?
+fi
+
+# Otherwise output the full context
+echo "$CONTEXT"
+SCRIPT
+chmod +x /usr/local/bin/sandfire-get-context
+
 # Set up DNS resolution (remove host's resolv.conf from debootstrap)
 rm -f /etc/resolv.conf
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
@@ -171,7 +218,7 @@ EOF
 apt-get update
 apt-get upgrade -y
 
-# Install jq for JSON processing (used by scripts)
+# Install jq for JSON processing (used by sandfire-get-context and other scripts)
 apt-get install -y jq
 
 # Configure git user if secrets are provided
