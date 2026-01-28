@@ -19,7 +19,6 @@ add-apt-repository -y universe
 apt-get update
 apt-get install -y \
     expect \
-    jq \
     tree \
     tmux \
     screen \

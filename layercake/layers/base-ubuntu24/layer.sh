@@ -171,6 +171,9 @@ EOF
 apt-get update
 apt-get upgrade -y
 
+# Install jq for JSON processing (used by scripts)
+apt-get install -y jq
+
 # Configure git user if secrets are provided
 if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
     {
