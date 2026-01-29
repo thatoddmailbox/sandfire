@@ -88,6 +88,7 @@ const indexHTML = `<!DOCTYPE html>
         .btn-delete { background: #6b7280; color: #fff; }
         .btn-create { background: #d4470a; color: #fff; padding: 10px 20px; }
         .btn-copy { background: #3b82f6; color: #fff; }
+        .btn-console { background: #8b5cf6; color: #fff; }
         .btn-more { background: #6b7280; color: #fff; padding: 6px 10px; }
         .actions { display: flex; gap: 8px; align-items: center; }
         .dropdown { position: relative; display: inline-block; }
@@ -371,6 +372,7 @@ const indexHTML = `<!DOCTYPE html>
                 html += '<button class="btn btn-copy" onclick="copySSH(\'' + vm.id + '\', this)">Copy SSH</button>';
 
                 if (vm.state === 'running') {
+                    html += '<button class="btn btn-console" onclick="openConsole(\'' + vm.id + '\')">Console</button>';
                     html += '<button class="btn btn-stop" onclick="stopVM(\'' + vm.id + '\')">Stop</button>';
                 } else if (vm.state === 'stopped' || vm.state === 'error') {
                     html += '<button class="btn btn-start" onclick="startVM(\'' + vm.id + '\')">Start</button>';
@@ -516,6 +518,10 @@ const indexHTML = `<!DOCTYPE html>
                 row.classList.toggle('loading', loading);
                 row.querySelectorAll('button').forEach(btn => btn.disabled = loading);
             }
+        }
+
+        function openConsole(id) {
+            window.open('/console/' + id, '_blank', 'width=1024,height=768');
         }
 
         async function copySSH(id, btn) {
