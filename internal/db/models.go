@@ -129,6 +129,23 @@ func (db *DB) GetVM(id string) (*VM, error) {
 	return &vm, nil
 }
 
+func (db *DB) GetVMByName(name string) (*VM, error) {
+	var vm VM
+	err := db.QueryRow(`SELECT id, name, os_image_id, ram_mb, disk_size_gb, vcpu_count,
+		internet_enabled, state, ip_address, tap_device, created_at, updated_at
+		FROM vms WHERE name = ?`, name).
+		Scan(&vm.ID, &vm.Name, &vm.OSImageID, &vm.RamMB, &vm.DiskSizeGB,
+			&vm.VCPUCount, &vm.InternetEnabled, &vm.State, &vm.IPAddress, &vm.TapDevice,
+			&vm.CreatedAt, &vm.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query vm by name: %w", err)
+	}
+	return &vm, nil
+}
+
 func (db *DB) CreateVM(name, osImageID string, ramMB, diskSizeGB, vcpuCount int, internetEnabled bool) (*VM, error) {
 	id := "vm-" + uuid.New().String()[:8]
 	_, err := db.Exec(`INSERT INTO vms (id, name, os_image_id, ram_mb, disk_size_gb, vcpu_count, internet_enabled)
