@@ -48,7 +48,8 @@ cat > /etc/opt/chrome/policies/managed/sandfire.json << 'EOF'
     "DefaultBrowserSettingEnabled": true,
     "MetricsReportingEnabled": false,
     "BrowserSignin": 0,
-    "SyncDisabled": true
+    "SyncDisabled": true,
+    "SearchSuggestEnabled": false
 }
 EOF
 
