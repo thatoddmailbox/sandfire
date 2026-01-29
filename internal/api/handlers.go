@@ -60,6 +60,17 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if VM with same name already exists
+	existingVM, err := s.db.GetVMByName(req.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if existingVM != nil {
+		writeError(w, http.StatusConflict, "a VM with this name already exists")
+		return
+	}
+
 	// Verify OS image exists
 	img, err := s.db.GetOSImage(req.OSImageID)
 	if err != nil {
@@ -147,6 +158,20 @@ func (s *Server) handleUpdateVM(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" {
 		req.Name = existing.Name
 	}
+
+	// Check if renaming to a name that already exists
+	if req.Name != existing.Name {
+		existingVM, err := s.db.GetVMByName(req.Name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if existingVM != nil {
+			writeError(w, http.StatusConflict, "a VM with this name already exists")
+			return
+		}
+	}
+
 	if req.RamMB == 0 {
 		req.RamMB = existing.RamMB
 	}
