@@ -34,6 +34,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
+	// VNC console
+	s.mux.HandleFunc("GET /console/{id}", s.handleVNCPage)
+	s.mux.Handle("GET /novnc/", http.StripPrefix("/novnc/", http.FileServer(http.Dir("static/novnc"))))
+
 	s.mux.HandleFunc("GET /api/caddy/get-certificate", s.handleCaddyGetCertificate)
 
 	s.mux.HandleFunc("GET /api/os-images", s.handleListOSImages)
@@ -46,6 +50,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/vms/{id}/start", s.handleStartVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/stop", s.handleStopVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/reset-disk", s.handleResetVMDisk)
+	s.mux.HandleFunc("GET /api/vms/{id}/vnc", s.handleVNCWebSocket)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
