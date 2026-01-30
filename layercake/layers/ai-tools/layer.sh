@@ -60,19 +60,14 @@ mkdir -p "$CLAUDE_BIN_DIR"
 curl -fsSL -o "${CLAUDE_VERSIONS_DIR}/${version}" "$GCS_BUCKET/$version/$platform/claude"
 chmod +x "${CLAUDE_VERSIONS_DIR}/${version}"
 
-# Create claude-bin symlink pointing to the versioned binary (for wrapper to call)
-ln -sf "${CLAUDE_VERSIONS_DIR}/${version}" "${CLAUDE_BIN_DIR}/claude-bin"
+# Create claude symlink pointing directly to the versioned binary
+ln -sf "${CLAUDE_VERSIONS_DIR}/${version}" "${CLAUDE_BIN_DIR}/claude"
 
-# Create wrapper script at the official claude location
-# This satisfies Claude's self-check while adding --dangerously-skip-permissions
-cat > "${CLAUDE_BIN_DIR}/claude" << 'EOF'
-#!/bin/bash
-# Claude Code wrapper for sandfire VMs
-# Automatically adds --dangerously-skip-permissions for isolated VM environment
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-exec "${SCRIPT_DIR}/claude-bin" --dangerously-skip-permissions "$@"
+# Create alias to add --dangerously-skip-permissions for isolated VM environment
+cat > /etc/profile.d/claude-alias.sh << 'EOF'
+alias claude='claude --dangerously-skip-permissions'
 EOF
-chmod +x "${CLAUDE_BIN_DIR}/claude"
+chmod 644 /etc/profile.d/claude-alias.sh
 
 # Set ownership for sandfire user
 chown -R sandfire:sandfire "${SANDFIRE_HOME}/.local"
