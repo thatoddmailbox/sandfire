@@ -24,6 +24,10 @@ apt-get install -y \
     screen \
     ripgrep
 
+# Configure screen for UTF-8 support
+echo 'defutf8 on' > "${SANDFIRE_HOME}/.screenrc"
+chown sandfire:sandfire "${SANDFIRE_HOME}/.screenrc"
+
 # Install Node.js and npm
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
