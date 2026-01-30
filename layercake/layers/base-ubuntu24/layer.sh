@@ -221,6 +221,14 @@ apt-get upgrade -y
 # Install jq for JSON processing (used by sandfire-get-context and other scripts)
 apt-get install -y jq
 
+# Set UTF-8 locale in sandfire user's bashrc
+cat >> /home/sandfire/.bashrc << 'EOF'
+
+# Set UTF-8 locale
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+EOF
+
 # Configure git user if secrets are provided
 if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
     {
