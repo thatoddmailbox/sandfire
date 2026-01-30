@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
+	"sandfire/static"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -36,7 +36,7 @@ func (s *Server) handleVNCPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Serve the VNC HTML page
-	content, err := os.ReadFile("static/vnc.html")
+	content, err := static.Files.ReadFile("vnc.html")
 	if err != nil {
 		http.Error(w, "VNC viewer not available", http.StatusInternalServerError)
 		return

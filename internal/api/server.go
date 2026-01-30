@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"sandfire/internal/certs"
 	"sandfire/internal/db"
 	"sandfire/internal/vm"
+	"sandfire/static"
 )
 
 type Server struct {
@@ -36,7 +38,8 @@ func (s *Server) registerRoutes() {
 
 	// VNC console
 	s.mux.HandleFunc("GET /console/{id}", s.handleVNCPage)
-	s.mux.Handle("GET /novnc/", http.StripPrefix("/novnc/", http.FileServer(http.Dir("static/novnc"))))
+	novncFS, _ := fs.Sub(static.Files, "novnc")
+	s.mux.Handle("GET /novnc/", http.StripPrefix("/novnc/", http.FileServer(http.FS(novncFS))))
 
 	s.mux.HandleFunc("GET /api/caddy/get-certificate", s.handleCaddyGetCertificate)
 
