@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VM Console - Sandfire</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+        }
+        #top_bar {
+            background: #2a2a2a;
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 1px solid #444;
+        }
+        #top_bar h1 {
+            color: #d4470a;
+            font-size: 1em;
+            font-weight: 600;
+        }
+        #status {
+            flex: 1;
+            color: #888;
+            font-size: 0.9em;
+        }
+        .status-connected { color: #22c55e; }
+        .status-error { color: #ef4444; }
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 500;
+            background: #444;
+            color: #fff;
+        }
+        .btn:hover { background: #555; }
+        .btn-back { background: #6b7280; }
+        .btn-keys { background: #3b82f6; }
+        #screen {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #screen canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        #error-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 100;
+        }
+        #error-overlay.show { display: flex; }
+        #error-overlay p { color: #ef4444; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <div id="top_bar">
+        <h1>Sandfire Console</h1>
+        <span id="status">Connecting...</span>
+        <button class="btn btn-keys" id="ctrlAltDelBtn">Ctrl+Alt+Del</button>
+        <button class="btn btn-back" onclick="window.close(); window.location='/';">Close</button>
+    </div>
+    <div id="screen"></div>
+
+    <div id="error-overlay">
+        <p id="error-message">Connection failed</p>
+        <button class="btn btn-back" onclick="window.location='/';">Back to Dashboard</button>
+    </div>
+
+    <script type="module">
+        import RFB from '/novnc/core/rfb.js';
+
+        const vmId = window.location.pathname.split('/').pop();
+        if (!vmId || !vmId.startsWith('vm-')) {
+            showError('Invalid VM ID');
+            throw new Error('Invalid VM ID');
+        }
+
+        let rfb;
+
+        function setStatus(text, className) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = className || '';
+        }
+
+        function showError(msg) {
+            document.getElementById('error-message').textContent = msg;
+            document.getElementById('error-overlay').classList.add('show');
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${protocol}//${window.location.host}/api/vms/${vmId}/vnc`;
+
+            setStatus('Connecting...');
+
+            rfb = new RFB(document.getElementById('screen'), url, {
+                credentials: { password: 'sandfire' }
+            });
+            rfb.scaleViewport = true;
+            rfb.resizeSession = false;
+
+            rfb.addEventListener('connect', () => {
+                setStatus('Connected', 'status-connected');
+                document.title = `${vmId} - Sandfire Console`;
+            });
+
+            rfb.addEventListener('disconnect', (e) => {
+                if (e.detail.clean) {
+                    setStatus('Disconnected');
+                } else {
+                    showError('Connection lost');
+                }
+            });
+
+            rfb.addEventListener('credentialsrequired', () => {
+                // Resend credentials if prompted (shouldn't happen with hardcoded password)
+                rfb.sendCredentials({ password: 'sandfire' });
+            });
+
+            rfb.addEventListener('desktopname', (e) => {
+                document.title = `${e.detail.name} - Sandfire Console`;
+            });
+        }
+
+        document.getElementById('ctrlAltDelBtn').addEventListener('click', () => {
+            if (rfb) rfb.sendCtrlAltDel();
+        });
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>
