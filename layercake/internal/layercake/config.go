@@ -31,9 +31,9 @@ func LoadLayer(dir string) (*Layer, error) {
 	defer f.Close()
 
 	layer := &Layer{
-		Dir:          dir,
-		RootfsSizeMB: 2048, // default
-		Export:       false,
+		Dir:    dir,
+		Export: false,
+		// RootfsSizeMB defaults to 0 (meaning "inherit from parent" or 2048 for base layers)
 	}
 
 	scanner := bufio.NewScanner(f)

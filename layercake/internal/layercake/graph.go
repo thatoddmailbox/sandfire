@@ -180,36 +180,36 @@ func (g *LayerGraph) GetBase() *Layer {
 }
 
 // GetEffectiveRootfsSizeMB returns the effective rootfs size for a layer, taking inheritance into account.
-// The effective size is the maximum of the layer's configured size and its parent's effective size,
-// since a child layer's rootfs cannot be smaller than its parent's.
-// If a layer specifies a value less than its parent's, a warning is printed.
-// The default for base layers is 2048 MB.
+// If a layer doesn't specify ROOTFS_SIZE_MB (value is 0), it inherits from its parent.
+// If a layer specifies a value less than its parent's effective size, a warning is printed and the parent's value is used.
+// The default for base layers without a specified value is 2048 MB.
 func (g *LayerGraph) GetEffectiveRootfsSizeMB(id string) int {
 	layer := g.layers[id]
 	if layer == nil {
 		return 2048
 	}
 
-	// For base layers, just return the configured size
+	// Get parent's effective size (or default 2048 for base layers)
+	var parentSize int
 	if layer.Parent == "scratch" {
-		return layer.RootfsSizeMB
+		parentSize = 2048
+	} else {
+		parentSize = g.GetEffectiveRootfsSizeMB(layer.Parent)
 	}
 
-	// Get parent's effective size
-	parentSize := g.GetEffectiveRootfsSizeMB(layer.Parent)
-
-	// Return the larger of parent and child sizes
-	if layer.RootfsSizeMB > parentSize {
-		return layer.RootfsSizeMB
+	// If this layer doesn't specify a value, inherit from parent
+	if layer.RootfsSizeMB == 0 {
+		return parentSize
 	}
 
-	// Warn if this layer specifies a smaller size than parent's effective size
+	// If this layer specifies a value less than parent, warn and use parent's
 	if layer.RootfsSizeMB < parentSize {
 		fmt.Printf("Warning: layer %s has ROOTFS_SIZE_MB=%d which is less than parent's effective %d, using parent's value\n",
 			layer.ID, layer.RootfsSizeMB, parentSize)
+		return parentSize
 	}
 
-	return parentSize
+	return layer.RootfsSizeMB
 }
 
 // GetEffectiveSuggestedRamMB returns the suggested RAM for a layer, taking inheritance into account.
