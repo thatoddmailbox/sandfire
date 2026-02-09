@@ -292,6 +292,14 @@ To find the URL for a service:
 Example: if domain is `vm.example.com` and service is `app`, the URL is `https://app.vm.example.com`
 
 Service names for each project are specified in that project's CLAUDE.md.
+
+If you are creating a new webserver, you should add it as a service so that the user can access it via the domain mentioned above. Do not replace the main Caddy webserver or its configuration unless the user specifically asks for it.
+
+To add a new service:
+1. Decide on a name and port for the service.
+2. Append a new line to /etc/sandfire/services like so: `{name} {port}`
+3. Run `sudo systemctl restart sandfire-generate-caddyfile`
+4. Run `sudo systemctl restart caddy`
 EOF
 chown sandfire:sandfire /home/sandfire/.claude/CLAUDE.md
 
