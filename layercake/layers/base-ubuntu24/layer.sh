@@ -219,15 +219,13 @@ apt-get update
 apt-get upgrade -y
 
 # Install jq for JSON processing (used by sandfire-get-context and other scripts)
-apt-get install -y jq
+# Install locales package so we can generate en_US.UTF-8
+apt-get install -y jq locales
 
-# Set UTF-8 locale in sandfire user's bashrc
-cat >> /home/sandfire/.bashrc << 'EOF'
-
-# Set UTF-8 locale
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
-EOF
+# Generate en_US.UTF-8 locale and set it as the system default
+sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen en_US.UTF-8
+update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
 # Configure git user if secrets are provided
 if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
