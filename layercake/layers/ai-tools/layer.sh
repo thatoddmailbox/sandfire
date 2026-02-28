@@ -182,5 +182,15 @@ WantedBy=multi-user.target
 EOF
 systemctl enable sandfire-claude-credentials.service
 
+# Install OpenCode coding agent
+curl -fsSL https://opencode.ai/install | HOME=/home/sandfire bash -s -- --no-modify-path
+chown -R sandfire:sandfire /home/sandfire/.opencode
+
+# Add OpenCode to PATH via profile.d
+cat > /etc/profile.d/opencode-path.sh << 'EOF'
+export PATH="$HOME/.opencode/bin:$PATH"
+EOF
+chmod 644 /etc/profile.d/opencode-path.sh
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
