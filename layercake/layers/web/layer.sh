@@ -303,5 +303,70 @@ To add a new service:
 EOF
 chown sandfire:sandfire /home/sandfire/.claude/CLAUDE.md
 
+# Create systemd service for OpenCode web UI (not enabled by default)
+cat > /etc/systemd/system/opencode-web.service << 'EOF'
+[Unit]
+Description=OpenCode Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=sandfire
+Group=sandfire
+ExecStart=/home/sandfire/.opencode/bin/opencode web
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create toggle script for OpenCode web UI
+cat > /usr/local/bin/sandfire-oc << 'SCRIPT'
+#!/bin/bash
+set -e
+
+# Re-exec as root if not already
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+SERVICES_FILE="/etc/sandfire/services"
+SERVICE_NAME="oc"
+SERVICE_PORT="4096"
+SYSTEMD_UNIT="opencode-web.service"
+
+case "$1" in
+    on)
+        # Add service registration if not already present
+        if ! grep -q "^${SERVICE_NAME} " "$SERVICES_FILE" 2>/dev/null; then
+            echo "${SERVICE_NAME} ${SERVICE_PORT}" >> "$SERVICES_FILE"
+        fi
+        # Enable and start the service
+        systemctl enable "$SYSTEMD_UNIT"
+        systemctl start "$SYSTEMD_UNIT"
+        # Regenerate Caddyfile and reload Caddy
+        systemctl restart sandfire-generate-caddyfile
+        systemctl restart caddy
+        echo "OpenCode web UI enabled on port ${SERVICE_PORT} (service: ${SERVICE_NAME})"
+        ;;
+    off)
+        # Stop and disable the service
+        systemctl stop "$SYSTEMD_UNIT" 2>/dev/null || true
+        systemctl disable "$SYSTEMD_UNIT" 2>/dev/null || true
+        # Remove service registration
+        sed -i "/^${SERVICE_NAME} /d" "$SERVICES_FILE"
+        # Regenerate Caddyfile and reload Caddy
+        systemctl restart sandfire-generate-caddyfile
+        systemctl restart caddy
+        echo "OpenCode web UI disabled"
+        ;;
+    *)
+        echo "Usage: sandfire-oc {on|off}"
+        exit 1
+        ;;
+esac
+SCRIPT
+chmod +x /usr/local/bin/sandfire-oc
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
