@@ -195,7 +195,7 @@ chmod 644 /etc/profile.d/opencode-path.sh
 # Create base OpenCode config with schema (child layers can add to this)
 OPENCODE_CONFIG_DIR="${SANDFIRE_HOME}/.config/opencode"
 mkdir -p "$OPENCODE_CONFIG_DIR"
-echo '{"$schema": "https://opencode.ai/config.json"}' | jq . > "$OPENCODE_CONFIG_DIR/opencode.json"
+echo '{"$schema": "https://opencode.ai/config.json", "permission": "allow"}' | jq . > "$OPENCODE_CONFIG_DIR/opencode.json"
 chown -R sandfire:sandfire "$OPENCODE_CONFIG_DIR"
 
 # Clean up
