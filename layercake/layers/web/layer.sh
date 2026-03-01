@@ -344,12 +344,13 @@ case "$1" in
             echo "${SERVICE_NAME} ${SERVICE_PORT}" >> "$SERVICES_FILE"
         fi
         # Enable and start the service
-        systemctl enable "$SYSTEMD_UNIT"
+        systemctl enable "$SYSTEMD_UNIT" &>/dev/null
         systemctl start "$SYSTEMD_UNIT"
         # Regenerate Caddyfile and reload Caddy
         systemctl restart sandfire-generate-caddyfile
         systemctl restart caddy
-        echo "OpenCode web UI enabled on port ${SERVICE_PORT} (service: ${SERVICE_NAME})"
+        DOMAIN=$(cat /etc/sandfire/domain 2>/dev/null)
+        echo "OpenCode web UI enabled on https://${SERVICE_NAME}.${DOMAIN}"
         ;;
     off)
         # Stop and disable the service
