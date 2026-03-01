@@ -317,7 +317,7 @@ User=sandfire
 Group=sandfire
 Environment=DISPLAY=:0
 WorkingDirectory=/home/sandfire/workspace
-ExecStart=/home/sandfire/.opencode/bin/opencode web
+ExecStart=/home/sandfire/.opencode/bin/opencode serve
 Restart=on-failure
 
 [Install]
