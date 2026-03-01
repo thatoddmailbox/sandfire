@@ -76,7 +76,9 @@ if [ -s "$SERVICES_FILE" ]; then
         cat >> "$CADDYFILE" << EOF
     @${name} expression {http.request.host}.startsWith("${name}.")
     handle @${name} {
-        reverse_proxy localhost:${port}
+        reverse_proxy localhost:${port} {
+            flush_interval -1
+        }
     }
 
 EOF
