@@ -64,6 +64,12 @@ jq '. + {"mcpServers": {"playwright": {"type": "stdio", "command": "npx", "args"
 mv "$CLAUDE_JSON.tmp" "$CLAUDE_JSON"
 chown sandfire:sandfire "$CLAUDE_JSON"
 
+# Add it to opencode config too
+OPENCODE_JSON=/home/sandfire/.config/opencode/opencode.json
+jq '. + {"mcp": {"playwright": {"type": "local", "command": ["npx", "@playwright/mcp@latest", "--allow-unrestricted-file-access"], "enabled": true, "environment": {}}}}' "$OPENCODE_JSON" > "$OPENCODE_JSON.tmp"
+mv "$OPENCODE_JSON.tmp" "$OPENCODE_JSON"
+chown sandfire:sandfire "$OPENCODE_JSON"
+
 # Configure VNC for sandfire user
 SANDFIRE_HOME="/home/sandfire"
 VNC_DIR="${SANDFIRE_HOME}/.vnc"
