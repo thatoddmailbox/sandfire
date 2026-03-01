@@ -316,6 +316,7 @@ Type=simple
 User=sandfire
 Group=sandfire
 Environment=DISPLAY=:0
+WorkingDirectory=/home/sandfire/workspace
 ExecStart=/home/sandfire/.opencode/bin/opencode web
 Restart=on-failure
 
