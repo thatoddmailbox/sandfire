@@ -315,6 +315,7 @@ After=network.target
 Type=simple
 User=sandfire
 Group=sandfire
+Environment=DISPLAY=:0
 ExecStart=/home/sandfire/.opencode/bin/opencode web
 Restart=on-failure
 
