@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -121,6 +122,15 @@ func (e *Exporter) cleanupOldExports(db *sql.DB) error {
 	return nil
 }
 
+// copyFileReflink copies a file using cp --reflink=auto for CoW cloning on ZFS,
+// falling back to a regular copy on filesystems that don't support it.
+func copyFileReflink(src, dst string) error {
+	if out, err := exec.Command("cp", "--reflink=auto", src, dst).CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, out)
+	}
+	return nil
+}
+
 // exportLayer exports a single layer to sandfire
 func (e *Exporter) exportLayer(layer *Layer, base *Layer, db *sql.DB) error {
 	exportID := "layercake-" + layer.ID
@@ -135,14 +145,14 @@ func (e *Exporter) exportLayer(layer *Layer, base *Layer, db *sql.DB) error {
 	// Copy rootfs
 	targetRootfs := filepath.Join(targetDir, "rootfs.ext4")
 	fmt.Printf("  Copying rootfs...\n")
-	if err := copyFile(layer.RootfsPath(), targetRootfs); err != nil {
+	if err := copyFileReflink(layer.RootfsPath(), targetRootfs); err != nil {
 		return fmt.Errorf("failed to copy rootfs: %w", err)
 	}
 
 	// Copy kernel from base
 	targetKernel := filepath.Join(targetDir, "vmlinux")
 	fmt.Printf("  Copying kernel...\n")
-	if err := copyFile(base.KernelPath(), targetKernel); err != nil {
+	if err := copyFileReflink(base.KernelPath(), targetKernel); err != nil {
 		return fmt.Errorf("failed to copy kernel: %w", err)
 	}
 
