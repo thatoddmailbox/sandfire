@@ -34,6 +34,9 @@ Build an Ubuntu 24.04 image for VMs:
 sudo ./scripts/build-ubuntu-image.sh
 ```
 
+> [!NOTE]
+> This builds a basic image to get started quickly. For real use, set up [layercake](./layercake) instead — it builds customizable root filesystems using composable layers (similar to Docker), so you can easily create and maintain purpose-built VM images.
+
 ### 3. Register the Image
 
 ```bash
