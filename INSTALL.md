@@ -77,15 +77,7 @@ sudo chmod 600 /var/lib/sandfire/envfile
 
 If no envfile is present, Sandfire will log a warning but continue running with default values.
 
-### 5. Set Up Networking
-
-Run the network setup script to create the bridge interface and NAT rules:
-
-```bash
-sudo ./scripts/setup-network.sh
-```
-
-### 6. Build and Register an OS Image (Optional)
+### 5. Build and Register an OS Image (Optional)
 
 If you haven't already built an OS image:
 
@@ -104,7 +96,7 @@ sudo sqlite3 /var/lib/sandfire/data/sandfire.db \
     '/var/lib/sandfire/data/images/ubuntu-24.04/rootfs.ext4');"
 ```
 
-### 7. Install the systemd Service
+### 6. Install the systemd Service
 
 Create the systemd unit file:
 
@@ -140,7 +132,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### 8. Enable and Start the Service
+### 7. Enable and Start the Service
 
 ```bash
 # Reload systemd to pick up the new service
@@ -228,12 +220,12 @@ Ensure the service is running as root and has access to:
 
 ### Network issues
 
-Ensure the bridge is set up:
+Sandfire automatically creates the bridge and NAT rules on startup. Verify the bridge exists:
 ```bash
 ip link show sandfire0
 ```
 
-If missing, run the network setup script:
+If missing, check the sandfire logs for network-related errors:
 ```bash
-sudo /path/to/sandfire/scripts/setup-network.sh
+sudo journalctl -u sandfire | grep -i bridge
 ```

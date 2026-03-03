@@ -26,15 +26,7 @@ Sandfire is a VM management service that uses Firecracker VMM for fast, secure m
 go build -o sandfire ./cmd/sandfire
 ```
 
-### 2. Set Up Networking
-
-Run the network setup script to create the bridge interface and NAT rules:
-
-```bash
-sudo ./scripts/setup-network.sh
-```
-
-### 3. Build an OS Image
+### 2. Build an OS Image
 
 Build an Ubuntu 24.04 image for VMs:
 
@@ -42,13 +34,13 @@ Build an Ubuntu 24.04 image for VMs:
 sudo ./scripts/build-ubuntu-image.sh
 ```
 
-### 4. Register the Image
+### 3. Register the Image
 
 ```bash
 sqlite3 ./data/sandfire.db "INSERT INTO os_images (id, name, kernel_path, rootfs_path) VALUES ('ubuntu-24.04', 'Ubuntu 24.04', '$(pwd)/data/images/ubuntu-24.04/vmlinux', '$(pwd)/data/images/ubuntu-24.04/rootfs.ext4');"
 ```
 
-### 5. Start Sandfire
+### 4. Start Sandfire
 
 ```bash
 sudo ./sandfire
