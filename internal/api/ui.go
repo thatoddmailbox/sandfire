@@ -359,7 +359,7 @@ const indexHTML = `<!DOCTYPE html>
                 const ip = vm.ip_address
                     ? '<span class="ip-address">' + escapeHtml(vm.ip_address) + '</span>'
                     : '<span class="no-ip">-</span>';
-                const specs = vm.vcpu_count + ' vCPU, ' + vm.ram_mb + ' MB RAM, ' + vm.disk_size_gb + ' GB';
+                const specs = vm.vcpu_count + (vm.vcpu_count === 1 ? ' vCPU, ' : ' vCPUs, ') + vm.ram_mb + ' MB RAM, ' + vm.disk_size_gb + ' GB';
                 const osImage = osImages[vm.os_image_id]?.name || vm.os_image_id;
 
                 html += '<tr data-id="' + escapeHtml(vm.id) + '">';
