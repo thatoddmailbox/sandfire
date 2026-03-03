@@ -1,15 +1,30 @@
 # Sandfire
 
-Sandfire is a VM management service that uses Firecracker VMM for fast, secure microVM creation. It provides a simple HTTP API for managing virtual machines with automatic networking via NAT.
+Sandfire is a service that lets you create isolated environments for AI coding agents. It uses [Firecracker](https://firecracker-microvm.github.io/) to create fast, secure microVMs.
+
+## Motivation
+
+You set up a VM image for something you are working on (using the companion [layercake](./layercake) tool) and then quickly spawn new VMs and launch agents with full permissions inside the VM. VMs get their own subdomain and you get SSH access.
+
+For example, say you are working on a fullstack web app. You would set up an image with your backend and frontend servers running. Then start a VM with your image, SSH in and prompt your agent. The agent is equipped with the tools to not only make the change but test it with Playwright MCP and Google Chrome! And then you can review its work by accessing the VM's subdomain in your browser.
+
+Thanks to their fast startup times, it is possible to create and delete VMs as you need them. You can also spin up multiple VMs to try different prompts on the same application in parallel.
+
+### Why not containers/Docker?
+
+I did not feel that containers provided the right level of isolation (especially from a security perspective, it just takes one wrong bind mount and then you have a container escape).
+
+I also wanted to run applications that use Docker containers or Docker Compose inside the isolate environment. Nesting Docker inside Docker is complex and risky. But running Docker inside a microVM is easy, just install it like you normally would!
+
+The main downside is that you have to make your own VM images, although [layercake](./layercake) can help with that. But if you have containers already, it is pretty easy to make a VM image that just installs Docker and then runs your application's containers.
 
 ## Features
 
 - REST API for VM lifecycle management (create, start, stop, delete)
 - Firecracker VMM with jailer for security isolation
+- Fast VM startup times (a few seconds)
 - Automatic networking with bridge interface and NAT
 - SQLite database for persistent state
-- Auto-restart of running VMs on server restart
-- Graceful shutdown handling
 
 ## Requirements
 
