@@ -107,22 +107,16 @@ The IP is configured via kernel command line parameters at boot.
 
 ## VM Credentials
 
-VMs created with `build-ubuntu-image.sh` have:
+VMs created with layercake or `build-ubuntu-image.sh` have these users:
 
 | Username | Password |
 |----------|----------|
 | root | sandfire |
 | sandfire | sandfire |
 
-SSH is enabled by default.
+SSH is enabled by default and can be accessed via the VM's private IP (10.20.30.x).
 
-## Testing
-
-Run the API test suite:
-
-```bash
-./scripts/test-api.sh
-```
+It's recommended to also set up the companion [sshproxy](./sshproxy) tool, which allows accessing the VMs remotely.
 
 ## Troubleshooting
 
