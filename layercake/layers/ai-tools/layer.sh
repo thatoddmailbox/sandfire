@@ -78,7 +78,27 @@ chown sandfire:sandfire "${SANDFIRE_HOME}/.claude.json"
 
 # Also set some useful settings in the claude settings.json file
 mkdir -p "${SANDFIRE_HOME}/.claude"
-echo '{"cleanupPeriodDays": 99999, "model": "opus"}' > "${SANDFIRE_HOME}/.claude/settings.json"
+echo '{"cleanupPeriodDays": 99999, "model": "opus", "statusLine": {"type": "command", "command": "/home/sandfire/.claude/statusline.sh"}}' > "${SANDFIRE_HOME}/.claude/settings.json"
+
+# Create statusline script that shows context window usage percentage
+cat > "${SANDFIRE_HOME}/.claude/statusline.sh" << 'EOF'
+#!/bin/bash
+input=$(cat)
+pct=$(echo "$input" | jq -r '
+  if (.context_window.used_percentage // null) != null then
+    .context_window.used_percentage | floor
+  elif (.context_window.remaining_percentage // null) != null then
+    100 - (.context_window.remaining_percentage | floor)
+  elif (.context_window.context_window_size // 0) > 0 then
+    (((.context_window.current_usage.input_tokens // 0) + (.context_window.current_usage.cache_creation_input_tokens // 0) + (.context_window.current_usage.cache_read_input_tokens // 0)) * 100 / .context_window.context_window_size) | floor
+  else
+    0
+  end
+')
+echo "${pct}% used"
+EOF
+chmod +x "${SANDFIRE_HOME}/.claude/statusline.sh"
+
 chown -R sandfire:sandfire "${SANDFIRE_HOME}/.claude"
 
 # If CLAUDE_CODE_OAUTH_TOKEN is set (from layer.secrets), write it to /etc/profile.d/
