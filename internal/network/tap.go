@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-func (m *Manager) CreateTap(name string) error {
+// CreateTap creates a TAP device and attaches it to the bridge.
+// If ownerUID is non-empty, the TAP device is created with that user as owner,
+// allowing an unprivileged process (e.g. jailed firecracker) to attach to it.
+func (m *Manager) CreateTap(name string, ownerUID string) error {
 	log.Printf("Creating TAP device %s", name)
 
 	// Check if device already exists and delete it first (idempotent creation)
@@ -19,8 +22,12 @@ func (m *Manager) CreateTap(name string) error {
 		}
 	}
 
-	// Create TAP device
-	if err := runCmd("ip", "tuntap", "add", name, "mode", "tap"); err != nil {
+	// Create TAP device, optionally with user ownership for jailed access
+	args := []string{"tuntap", "add", name, "mode", "tap"}
+	if ownerUID != "" {
+		args = append(args, "user", ownerUID)
+	}
+	if err := runCmd("ip", args...); err != nil {
 		// Double-check if it exists now (race condition protection)
 		if m.tapExists(name) {
 			log.Printf("TAP device %s was created by another process, continuing", name)

@@ -44,7 +44,7 @@ func NewManager(dataDir string, networkMgr *network.Manager) *Manager {
 		firecrackerPath: fcPath,
 		jailerUID:       1000,
 		jailerGID:       1000,
-		useJailer:       false, // Disable jailer for now (networking issues)
+		useJailer:       true,
 		networkMgr:      networkMgr,
 		processes:       make(map[string]*FirecrackerProcess),
 	}
@@ -64,6 +64,9 @@ func (m *Manager) CleanupOrphanedResources() {
 
 	// 3. Clean up orphaned socket directories
 	m.cleanOrphanedSocketDirs()
+
+	// 4. Clean up orphaned jail directories
+	m.cleanOrphanedJails()
 
 	log.Println("Orphaned resource cleanup complete")
 }
@@ -194,6 +197,33 @@ func (m *Manager) cleanOrphanedSocketDirs() {
 	}
 }
 
+// cleanOrphanedJails removes jail directories left behind from a previous run.
+func (m *Manager) cleanOrphanedJails() {
+	execFileName := filepath.Base(m.firecrackerPath)
+	jailParent := filepath.Join(m.dataDir, "jails", execFileName)
+	entries, err := os.ReadDir(jailParent)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			vmID := entry.Name()
+			log.Printf("Cleaning up orphaned jail: %s", vmID)
+			m.cleanupJailDir(vmID)
+		}
+	}
+}
+
+// cleanupJailDir unmounts bind mounts and removes the jail directory for a VM.
+func (m *Manager) cleanupJailDir(vmID string) {
+	jailBase := filepath.Join(m.dataDir, "jails")
+	execFileName := filepath.Base(m.firecrackerPath)
+	jailDir := filepath.Join(jailBase, execFileName, vmID)
+	chrootDir := filepath.Join(jailDir, "root")
+	cleanupJail(jailDir, chrootDir)
+}
+
 func (m *Manager) PrepareVMDisk(vmID string, img *db.OSImage) error {
 	vmDir := filepath.Join(m.dataDir, "vms", vmID)
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
@@ -231,9 +261,14 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 		return "", "", fmt.Errorf("allocate IP: %w", err)
 	}
 
-	// Create TAP device
+	// Create TAP device. When using the jailer, set the TAP owner to the
+	// jail UID so the unprivileged firecracker process can attach to it.
 	tapDevice = "tap-" + vm.ID
-	if err := m.networkMgr.CreateTap(tapDevice); err != nil {
+	tapOwner := ""
+	if m.useJailer {
+		tapOwner = fmt.Sprintf("%d", m.jailerUID)
+	}
+	if err := m.networkMgr.CreateTap(tapDevice, tapOwner); err != nil {
 		m.networkMgr.ReleaseIP(ipAddress)
 		return "", "", fmt.Errorf("create tap device: %w", err)
 	}
@@ -253,64 +288,31 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 	var kernelPath, rootfsPath string
 
 	if m.useJailer {
-		// Jail directory paths
-		// Jailer creates jail at {jailBase}/{exec-file-name}/{vm-id}/root/
 		jailBase := filepath.Join(m.dataDir, "jails")
-		execFileName := filepath.Base(m.firecrackerPath)
-		jailRoot := filepath.Join(jailBase, execFileName, vm.ID, "root")
 
-		// Start jailer with firecracker (this creates the jail structure)
+		jail := jailConfig{
+			KernelPath: img.KernelPath,
+			RootfsPath: vmRootfs,
+		}
+
 		var err error
-		proc, err = startJailer(vm.ID, m.firecrackerPath, jailBase, m.jailerUID, m.jailerGID)
+		proc, err = startJailer(vm.ID, m.firecrackerPath, jailBase, m.dataDir, m.jailerUID, m.jailerGID, jail)
 		if err != nil {
 			m.networkMgr.DeleteTap(tapDevice)
 			m.networkMgr.ReleaseIP(ipAddress)
-			os.RemoveAll(filepath.Join(jailBase, execFileName, vm.ID))
 			return "", "", fmt.Errorf("start jailer: %w", err)
 		}
 
-		// Wait for socket
-		if err := proc.waitForSocket(10 * 1e9); err != nil {
+		if err := proc.waitForSocket(10 * time.Second); err != nil {
 			proc.stop()
+			m.cleanupJailDir(vm.ID)
 			m.networkMgr.DeleteTap(tapDevice)
 			m.networkMgr.ReleaseIP(ipAddress)
-			os.RemoveAll(filepath.Join(jailBase, execFileName, vm.ID))
 			return "", "", fmt.Errorf("wait for socket: %w", err)
 		}
 
-		// Create /dev/net/tun in jail for TAP device access
-		devNetDir := filepath.Join(jailRoot, "dev", "net")
-		os.MkdirAll(devNetDir, 0755)
-		tunDst := filepath.Join(devNetDir, "tun")
-		exec.Command("mknod", tunDst, "c", "10", "200").Run()
-		exec.Command("chmod", "0666", tunDst).Run()
-
-		// Copy kernel to jail
-		kernelDst := filepath.Join(jailRoot, "kernel")
-		cmd := exec.Command("cp", img.KernelPath, kernelDst)
-		if err := cmd.Run(); err != nil {
-			proc.stop()
-			m.networkMgr.DeleteTap(tapDevice)
-			m.networkMgr.ReleaseIP(ipAddress)
-			os.RemoveAll(filepath.Join(jailBase, execFileName, vm.ID))
-			return "", "", fmt.Errorf("copy kernel to jail: %w", err)
-		}
-
-		// Copy rootfs to jail
-		rootfsDst := filepath.Join(jailRoot, "rootfs.ext4")
-		cmd = exec.Command("cp", vmRootfs, rootfsDst)
-		if err := cmd.Run(); err != nil {
-			proc.stop()
-			m.networkMgr.DeleteTap(tapDevice)
-			m.networkMgr.ReleaseIP(ipAddress)
-			os.RemoveAll(filepath.Join(jailBase, execFileName, vm.ID))
-			return "", "", fmt.Errorf("copy rootfs to jail: %w", err)
-		}
-
-		// Change ownership
-		exec.Command("chown", fmt.Sprintf("%d:%d", m.jailerUID, m.jailerGID), kernelDst, rootfsDst).Run()
-
-		kernelPath = "/kernel"
+		// Paths are relative to the chroot
+		kernelPath = "/vmlinux"
 		rootfsPath = "/rootfs.ext4"
 	} else {
 		// Run firecracker directly without jailer
@@ -403,9 +405,7 @@ func (m *Manager) StopVM(vmID string) error {
 
 	// Clean up runtime directories
 	if m.useJailer {
-		jailBase := filepath.Join(m.dataDir, "jails")
-		execFileName := filepath.Base(m.firecrackerPath)
-		os.RemoveAll(filepath.Join(jailBase, execFileName, vmID))
+		m.cleanupJailDir(vmID)
 	} else {
 		socketDir := filepath.Join(m.dataDir, "run", vmID)
 		os.RemoveAll(socketDir)
@@ -459,6 +459,12 @@ func (m *Manager) StopAllVMs() {
 		}
 		tapDevice := "tap-" + vmID
 		m.networkMgr.DeleteTap(tapDevice)
+		if m.useJailer {
+			m.cleanupJailDir(vmID)
+		} else {
+			socketDir := filepath.Join(m.dataDir, "run", vmID)
+			os.RemoveAll(socketDir)
+		}
 	}
 	m.processes = make(map[string]*FirecrackerProcess)
 }

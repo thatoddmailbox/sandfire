@@ -236,14 +236,76 @@ func (p *FirecrackerProcess) stop() error {
 	return nil
 }
 
-func startJailer(vmID, firecrackerPath, jailBase string, uid, gid int) (*FirecrackerProcess, error) {
-	// Jailer creates jail at {chroot-base-dir}/{exec-file-name}/{vm-id}/root/
-	execFileName := filepath.Base(firecrackerPath)
-	jailPath := filepath.Join(jailBase, execFileName, vmID, "root")
-	socketPath := filepath.Join(jailPath, "run", "firecracker.socket")
+// jailConfig holds the paths needed to set up bind mounts in the jail.
+type jailConfig struct {
+	KernelPath string // Host path to kernel image
+	RootfsPath string // Host path to VM rootfs
+}
 
-	// Clean up any existing jail
-	os.RemoveAll(filepath.Join(jailBase, execFileName, vmID))
+// startJailer prepares a jail with bind-mounted resources, then starts the
+// official Firecracker jailer binary.
+//
+// The flow is:
+//  1. Pre-create the chroot dir that the jailer expects
+//  2. Bind mount kernel and rootfs into the chroot dir
+//  3. Start the jailer (it copies the firecracker binary, creates device nodes,
+//     pivots root, drops privileges, and execs firecracker)
+//  4. The caller waits for the socket and configures the VM
+func startJailer(vmID, firecrackerPath, jailBase, dataDir string, uid, gid int, jail jailConfig) (*FirecrackerProcess, error) {
+	execFileName := filepath.Base(firecrackerPath)
+	jailDir := filepath.Join(jailBase, execFileName, vmID)
+	chrootDir := filepath.Join(jailDir, "root")
+	socketPath := filepath.Join(chrootDir, "run", "firecracker.socket")
+
+	// Clean up any existing jail (unmount first, then remove)
+	cleanupJail(jailDir, chrootDir)
+
+	// Create chroot dir before the jailer runs. The jailer docs say
+	// "Nothing is done if the path already exists."
+	if err := os.MkdirAll(chrootDir, 0755); err != nil {
+		return nil, fmt.Errorf("create chroot dir: %w", err)
+	}
+
+	// The jailer bind-mounts chrootDir on itself and then pivot_roots into it.
+	// If the underlying filesystem is mounted with "nodev" (common for /home),
+	// device nodes created by the jailer (/dev/kvm, /dev/net/tun) won't work.
+	// Fix: bind-mount chrootDir on itself and remount with "dev" enabled,
+	// so the jailer's subsequent bind mount inherits the "dev" option.
+	if err := exec.Command("mount", "--bind", chrootDir, chrootDir).Run(); err != nil {
+		cleanupJail(jailDir, chrootDir)
+		return nil, fmt.Errorf("bind mount chroot dir: %w", err)
+	}
+	if err := exec.Command("mount", "-o", "remount,dev", chrootDir).Run(); err != nil {
+		cleanupJail(jailDir, chrootDir)
+		return nil, fmt.Errorf("remount chroot dir with dev: %w", err)
+	}
+
+	// Bind mount kernel into jail
+	if err := bindMount(jail.KernelPath, filepath.Join(chrootDir, "vmlinux")); err != nil {
+		cleanupJail(jailDir, chrootDir)
+		return nil, fmt.Errorf("bind mount kernel: %w", err)
+	}
+
+	// Bind mount rootfs into jail
+	if err := bindMount(jail.RootfsPath, filepath.Join(chrootDir, "rootfs.ext4")); err != nil {
+		cleanupJail(jailDir, chrootDir)
+		return nil, fmt.Errorf("bind mount rootfs: %w", err)
+	}
+
+	// Set ownership so the jailed firecracker can read/write these files
+	uidGid := fmt.Sprintf("%d:%d", uid, gid)
+	exec.Command("chown", uidGid,
+		filepath.Join(chrootDir, "vmlinux"),
+		filepath.Join(chrootDir, "rootfs.ext4"),
+	).Run()
+
+	// Create serial log file
+	logPath := filepath.Join(dataDir, "vms", vmID, "serial.log")
+	serialLog, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		cleanupJail(jailDir, chrootDir)
+		return nil, fmt.Errorf("create serial log: %w", err)
+	}
 
 	cmd := exec.Command("jailer",
 		"--id", vmID,
@@ -256,10 +318,16 @@ func startJailer(vmID, firecrackerPath, jailBase string, uid, gid int) (*Firecra
 	)
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // Create new session
+		Setsid: true,
 	}
 
+	// Capture serial output (jailer does NOT use --daemonize so we get stdout/stderr)
+	cmd.Stdout = serialLog
+	cmd.Stderr = serialLog
+
 	if err := cmd.Start(); err != nil {
+		serialLog.Close()
+		cleanupJail(jailDir, chrootDir)
 		return nil, fmt.Errorf("start jailer: %w", err)
 	}
 
@@ -267,13 +335,41 @@ func startJailer(vmID, firecrackerPath, jailBase string, uid, gid int) (*Firecra
 		VMID:       vmID,
 		Cmd:        cmd,
 		SocketPath: socketPath,
-		JailPath:   jailPath,
+		JailPath:   jailDir,
+		SerialLog:  serialLog,
 	}
 
-	// Start waiting for process exit in background
 	proc.startWaiter()
 
 	return proc, nil
+}
+
+// bindMount creates a bind mount from src to dst. The dst file is created
+// (as an empty file) if it does not exist.
+func bindMount(src, dst string) error {
+	// Create empty target file for the bind mount
+	f, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("create mount target %s: %w", dst, err)
+	}
+	f.Close()
+
+	if err := exec.Command("mount", "--bind", src, dst).Run(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("mount --bind %s %s: %w", src, dst, err)
+	}
+	return nil
+}
+
+// cleanupJail unmounts bind mounts inside the chroot dir and removes the
+// entire jail directory.
+func cleanupJail(jailDir, chrootDir string) {
+	// Unmount any bind mounts (ignore errors — they may not be mounted)
+	exec.Command("umount", filepath.Join(chrootDir, "vmlinux")).Run()
+	exec.Command("umount", filepath.Join(chrootDir, "rootfs.ext4")).Run()
+	// Unmount the chroot dir itself (we bind-mounted it for nodev workaround)
+	exec.Command("umount", chrootDir).Run()
+	os.RemoveAll(jailDir)
 }
 
 func startFirecrackerDirect(vmID, firecrackerPath, dataDir string) (*FirecrackerProcess, error) {
