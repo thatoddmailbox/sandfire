@@ -10,7 +10,8 @@ rm go1.25.6.linux-amd64.tar.gz
 # Add Go to system-wide PATH and set GOROOT
 cat >> /etc/profile << 'EOF'
 export GOROOT=/usr/local/go
-export PATH=$PATH:/usr/local/go/bin
+export GOPATH=$HOME/go
+export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
 EOF
 
 # Verify Go installation
