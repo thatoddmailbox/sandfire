@@ -75,17 +75,9 @@ Sandfire uses the following defaults:
 | Bridge IP | `10.20.30.1/24` | Bridge network |
 | VM IP Range | `10.20.30.2-254` | IP addresses assigned to VMs |
 
-## Networking
+## Accessing the VMs
 
-Each VM gets:
-- A TAP device attached to the `sandfire0` bridge
-- An IP address from the 10.20.30.0/24 range
-- Gateway at 10.20.30.1
-- NAT for internet access (if `internet_enabled` is true)
-
-The IP is configured via kernel command line parameters at boot.
-
-## VM Credentials
+Each VM gets an IP address from the 10.20.30.0/24 range and have an SSH server running.
 
 VMs created with layercake or `build-ubuntu-image.sh` have these users:
 
@@ -94,30 +86,7 @@ VMs created with layercake or `build-ubuntu-image.sh` have these users:
 | root | sandfire |
 | sandfire | sandfire |
 
-SSH is enabled by default and can be accessed via the VM's private IP (10.20.30.x).
-
 It's recommended to also set up the companion [sshproxy](./sshproxy) tool, which allows accessing the VMs remotely.
-
-## Troubleshooting
-
-### VM fails to start
-
-1. Check that KVM is available: `ls -la /dev/kvm`
-2. Ensure Firecracker is installed: `which firecracker jailer`
-3. Check logs for errors
-
-### Network not working
-
-1. Verify bridge exists: `ip link show sandfire0`
-2. Check NAT rules: `iptables -t nat -L -n`
-3. Ensure IP forwarding is enabled: `cat /proc/sys/net/ipv4/ip_forward`
-
-### Permission denied
-
-Sandfire requires root privileges for:
-- Creating bridge and TAP devices
-- Managing iptables rules
-- Running jailer
 
 ## Companion tools
 
