@@ -238,10 +238,6 @@ const indexHTML = `<!DOCTYPE html>
                         <label for="vcpu_count">vCPUs</label>
                         <input type="number" id="vcpu_count" name="vcpu_count" value="1" min="1" max="8">
                     </div>
-                    <div class="form-group checkbox-group">
-                        <input type="checkbox" id="internet_enabled" name="internet_enabled" checked>
-                        <label for="internet_enabled">Internet Access</label>
-                    </div>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-create">Create VM</button>
@@ -256,7 +252,6 @@ const indexHTML = `<!DOCTYPE html>
             <form id="edit-form">
                 <input type="hidden" id="edit-vm-id">
                 <input type="hidden" id="edit-disk-size">
-                <input type="hidden" id="edit-internet">
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="edit-name">Name</label>
@@ -379,7 +374,7 @@ const indexHTML = `<!DOCTYPE html>
                     html += '<div class="dropdown">';
                     html += '<button class="btn btn-more" onclick="toggleDropdown(event, \'' + vm.id + '\')">More</button>';
                     html += '<div id="dropdown-' + vm.id + '" class="dropdown-content">';
-                    html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ', ' + vm.disk_size_gb + ', ' + vm.internet_enabled + ')">Edit</button>';
+                    html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ', ' + vm.disk_size_gb + ')">Edit</button>';
                     html += '<button class="dropdown-item danger" onclick="resetVMDisk(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Reset Disk</button>';
                     html += '<button class="dropdown-item danger" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
                     html += '</div></div>';
@@ -440,14 +435,13 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
-        function openEditModal(id, name, vcpu, ram, diskSize, internet) {
+        function openEditModal(id, name, vcpu, ram, diskSize) {
             closeAllDropdowns();
             document.getElementById('edit-vm-id').value = id;
             document.getElementById('edit-name').value = name;
             document.getElementById('edit-vcpu').value = vcpu;
             document.getElementById('edit-ram').value = ram;
             document.getElementById('edit-disk-size').value = diskSize;
-            document.getElementById('edit-internet').value = internet;
             document.getElementById('edit-modal').classList.add('show');
         }
 
@@ -462,7 +456,6 @@ const indexHTML = `<!DOCTYPE html>
             const vcpu = parseInt(document.getElementById('edit-vcpu').value);
             const ram = parseInt(document.getElementById('edit-ram').value);
             const diskSize = parseInt(document.getElementById('edit-disk-size').value);
-            const internet = document.getElementById('edit-internet').value === 'true';
             const btn = e.target.querySelector('button[type="submit"]');
             btn.disabled = true;
 
@@ -474,7 +467,7 @@ const indexHTML = `<!DOCTYPE html>
                         vcpu_count: vcpu,
                         ram_mb: ram,
                         disk_size_gb: diskSize,
-                        internet_enabled: internet
+                        internet_enabled: true
                     })
                 });
                 closeEditModal();
@@ -548,7 +541,7 @@ const indexHTML = `<!DOCTYPE html>
                 ram_mb: parseInt(form.ram_mb.value) || 1024,
                 disk_size_gb: parseInt(form.disk_size_gb.value) || 8,
                 vcpu_count: parseInt(form.vcpu_count.value) || 1,
-                internet_enabled: form.internet_enabled.checked
+                internet_enabled: true
             };
 
             try {
@@ -560,7 +553,6 @@ const indexHTML = `<!DOCTYPE html>
                 form.ram_mb.value = '512';
                 form.disk_size_gb.value = '8';
                 form.vcpu_count.value = '1';
-                form.internet_enabled.checked = true;
                 await loadVMs();
             } catch (e) {
                 showError('Failed to create VM: ' + e.message);

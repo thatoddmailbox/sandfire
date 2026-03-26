@@ -93,7 +93,7 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		req.VCPUCount = 1
 	}
 
-	vm, err := s.db.CreateVM(req.Name, req.OSImageID, req.RamMB, req.DiskSizeGB, req.VCPUCount, req.InternetEnabled)
+	vm, err := s.db.CreateVM(req.Name, req.OSImageID, req.RamMB, req.DiskSizeGB, req.VCPUCount, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -182,7 +182,7 @@ func (s *Server) handleUpdateVM(w http.ResponseWriter, r *http.Request) {
 		req.VCPUCount = existing.VCPUCount
 	}
 
-	vm, err := s.db.UpdateVM(id, req.Name, req.RamMB, req.DiskSizeGB, req.VCPUCount, req.InternetEnabled)
+	vm, err := s.db.UpdateVM(id, req.Name, req.RamMB, req.DiskSizeGB, req.VCPUCount, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
