@@ -35,10 +35,11 @@ The main downside is that you have to make your own VM images, although [layerca
 
 ## Quick Start
 
+You should make sure you cloned the repository with `--recursive`. If you didn't, you can also run the command `git submodule update --init --recursive` to clone the submodules.
+
 ### 1. Build Sandfire
 
 ```bash
-git submodule update --init --recursive
 go build -o sandfire ./cmd/sandfire
 ```
 
