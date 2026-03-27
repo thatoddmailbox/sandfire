@@ -27,41 +27,52 @@ The main downside is that you have to make your own VM images, although [layerca
 
 - Linux with KVM support (`/dev/kvm` must be accessible)
 - Firecracker and jailer installed (https://github.com/firecracker-microvm/firecracker)
+	- On Arch-based systems, you should use the [binaries from the latest Firecracker release](https://github.com/firecracker-microvm/firecracker/releases/latest) instead of the Arch package.
+	- This is because the Arch package is built with glibc which isn't supported by the jailer.
 - Root privileges (for network configuration and jailer)
 - Go 1.21+ (for building)
+- `debootstrap` (for layercake to build images)
 
 ## Quick Start
 
 ### 1. Build Sandfire
 
 ```bash
+git submodule update --init --recursive
 go build -o sandfire ./cmd/sandfire
 ```
 
-### 2. Build an OS Image
+### 2. Build Layercake
 
-Build an Ubuntu 24.04 image for VMs:
-
-```bash
-sudo ./scripts/build-ubuntu-image.sh
-```
-
-> [!NOTE]
-> This builds a basic image to get started quickly. For real use, set up [layercake](./layercake) instead — it builds customizable root filesystems using composable layers (similar to Docker), so you can easily create and maintain purpose-built VM images.
-
-### 3. Register the Image
+The companion [layercake](./layercake) tool helps with building VM images.
 
 ```bash
-sqlite3 ./data/sandfire.db "INSERT INTO os_images (id, name, kernel_path, rootfs_path) VALUES ('ubuntu-24.04', 'Ubuntu 24.04', '$(pwd)/data/images/ubuntu-24.04/vmlinux', '$(pwd)/data/images/ubuntu-24.04/rootfs.ext4');"
+cd layercake
+go build -o layercake ./cmd/layercake
 ```
 
-### 4. Start Sandfire
+### 3. Start Sandfire
 
 ```bash
 sudo ./sandfire
 ```
 
-The server listens on port 9000 by default.
+### 4. Build VM images
+
+From the layercake folder, build the various layers. Sudo is required because it uses `chroot`. Once done, the export command registers the images with Sandfire.
+
+```bash
+./layercake status
+sudo ./layercake build -all
+./layercake export ../data
+```
+
+You can now go to the Sandfire web UI at http://localhost:9000 and try creating some VMs!
+
+### Additional setup
+
+* Define more layers in [layercake](./layercake/README.md)
+* Build and run [sshproxy](./sshproxy) for easier SSH access
 
 ## Configuration
 
@@ -79,7 +90,7 @@ Sandfire uses the following defaults:
 
 Each VM gets an IP address from the 10.20.30.0/24 range and have an SSH server running.
 
-VMs created with layercake or `build-ubuntu-image.sh` have these users:
+VMs have these users by default:
 
 | Username | Password |
 |----------|----------|
