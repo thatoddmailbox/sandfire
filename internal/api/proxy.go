@@ -84,8 +84,8 @@ func extractVMID(host string) (string, error) {
 // Returns PEM-encoded certificate chain and private key concatenated.
 func (s *Server) handleCaddyGetCertificate(w http.ResponseWriter, r *http.Request) {
 	if s.certManager == nil {
-		log.Printf("get-certificate: certificate manager not initialized")
-		http.Error(w, "certificate manager not available", http.StatusServiceUnavailable)
+		log.Printf("get-certificate: certificate manager not configured (set SANDFIRE_DOMAIN and CLOUDFLARE_API_TOKEN)")
+		http.Error(w, "certificate manager not configured (set SANDFIRE_DOMAIN and CLOUDFLARE_API_TOKEN)", http.StatusServiceUnavailable)
 		return
 	}
 
