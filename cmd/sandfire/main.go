@@ -115,23 +115,22 @@ Use the scripts in scripts/ to interact with the server.`)
 
 	// Initialize certificate manager
 	baseDomain := os.Getenv("SANDFIRE_DOMAIN")
-	if baseDomain == "" {
-		baseDomain = "sand.studer.dev"
-	}
-	cloudflareToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-	if cloudflareToken == "" {
-		log.Println("Warning: CLOUDFLARE_API_TOKEN not set, certificate management will not work")
-	}
-	useACMEStaging := os.Getenv("SANDFIRE_ACME_STAGING") == "1"
-
 	var certManager *certs.Manager
-	if cloudflareToken != "" {
-		var err error
-		certManager, err = certs.NewManager(dataDir, baseDomain, cloudflareToken, useACMEStaging)
-		if err != nil {
-			log.Printf("Warning: Failed to initialize certificate manager: %v", err)
+	if baseDomain == "" {
+		log.Println("Warning: SANDFIRE_DOMAIN not set, certificate management disabled")
+	} else {
+		cloudflareToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+		if cloudflareToken == "" {
+			log.Println("Warning: CLOUDFLARE_API_TOKEN not set, certificate management will not work")
 		} else {
-			log.Printf("Certificate manager initialized for domain %s", baseDomain)
+			useACMEStaging := os.Getenv("SANDFIRE_ACME_STAGING") == "1"
+			var err error
+			certManager, err = certs.NewManager(dataDir, baseDomain, cloudflareToken, useACMEStaging)
+			if err != nil {
+				log.Printf("Warning: Failed to initialize certificate manager: %v", err)
+			} else {
+				log.Printf("Certificate manager initialized for domain %s", baseDomain)
+			}
 		}
 	}
 
