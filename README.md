@@ -89,7 +89,7 @@ Sandfire uses the following defaults:
 
 ## Accessing the VMs
 
-Each VM gets an IP address from the 10.20.30.0/24 range and have an SSH server running.
+Each VM gets an IP address from the 10.20.30.0/24 range and has an SSH server running.
 
 VMs have these users by default:
 
