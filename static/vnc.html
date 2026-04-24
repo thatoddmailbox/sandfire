@@ -47,6 +47,30 @@
         .btn:hover { background: #555; }
         .btn-back { background: #6b7280; }
         .btn-keys { background: #3b82f6; }
+        .btn-clip { background: #8b5cf6; }
+        .btn-clip.active { background: #7c3aed; }
+        #clipboard-panel {
+            display: none;
+            background: #2a2a2a;
+            border-bottom: 1px solid #444;
+            padding: 10px 15px;
+            gap: 8px;
+        }
+        #clipboard-panel.show { display: flex; align-items: center; }
+        #clipboard-panel textarea {
+            flex: 1;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-family: monospace;
+            font-size: 0.85em;
+            resize: vertical;
+            min-height: 36px;
+            max-height: 120px;
+        }
+        #clipboard-panel textarea:focus { border-color: #8b5cf6; outline: none; }
         #screen {
             flex: 1;
             overflow: hidden;
@@ -78,7 +102,12 @@
         <h1>Sandfire Console</h1>
         <span id="status">Connecting...</span>
         <button class="btn btn-keys" id="ctrlAltDelBtn">Ctrl+Alt+Del</button>
+        <button class="btn btn-clip" id="clipboardBtn">Clipboard</button>
         <button class="btn btn-back" onclick="window.close(); window.location='/';">Close</button>
+    </div>
+    <div id="clipboard-panel">
+        <textarea id="clipboard-text" rows="1" placeholder="Clipboard text (syncs automatically when possible)"></textarea>
+        <button class="btn" id="clipSendBtn">Send to VM</button>
     </div>
     <div id="screen"></div>
 
@@ -139,6 +168,8 @@
                 rfb.sendCredentials({ password: 'sandfire' });
             });
 
+            rfb.addEventListener('clipboard', onClipboard);
+
             rfb.addEventListener('desktopname', (e) => {
                 document.title = `${e.detail.name} - Sandfire Console`;
             });
@@ -147,6 +178,46 @@
         document.getElementById('ctrlAltDelBtn').addEventListener('click', () => {
             if (rfb) rfb.sendCtrlAltDel();
         });
+
+        // Clipboard support
+        const clipboardBtn = document.getElementById('clipboardBtn');
+        const clipboardPanel = document.getElementById('clipboard-panel');
+        const clipboardText = document.getElementById('clipboard-text');
+        const clipSendBtn = document.getElementById('clipSendBtn');
+        const hasClipboardAPI = navigator.clipboard && window.isSecureContext;
+
+        clipboardBtn.addEventListener('click', () => {
+            clipboardPanel.classList.toggle('show');
+            clipboardBtn.classList.toggle('active');
+        });
+
+        // Send clipboard text to VM (manual fallback)
+        clipSendBtn.addEventListener('click', () => {
+            if (rfb && clipboardText.value) {
+                rfb.clipboardPasteFrom(clipboardText.value);
+            }
+        });
+
+        // VM → Host: receive clipboard from VNC server
+        function onClipboard(e) {
+            clipboardText.value = e.detail.text;
+            if (hasClipboardAPI) {
+                navigator.clipboard.writeText(e.detail.text).catch(() => {});
+            }
+        }
+
+        // Host → VM: send host clipboard to VNC server on focus
+        function onFocus() {
+            if (!rfb || !hasClipboardAPI) return;
+            navigator.clipboard.readText().then(text => {
+                if (text) {
+                    clipboardText.value = text;
+                    rfb.clipboardPasteFrom(text);
+                }
+            }).catch(() => {});
+        }
+
+        window.addEventListener('focus', onFocus);
 
         // Start connection
         connect();
