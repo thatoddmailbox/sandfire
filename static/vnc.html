@@ -48,29 +48,8 @@
         .btn-back { background: #6b7280; }
         .btn-keys { background: #3b82f6; }
         .btn-clip { background: #8b5cf6; }
-        .btn-clip.active { background: #7c3aed; }
-        #clipboard-panel {
-            display: none;
-            background: #2a2a2a;
-            border-bottom: 1px solid #444;
-            padding: 10px 15px;
-            gap: 8px;
-        }
-        #clipboard-panel.show { display: flex; align-items: center; }
-        #clipboard-panel textarea {
-            flex: 1;
-            background: #1a1a1a;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            padding: 6px 10px;
-            font-family: monospace;
-            font-size: 0.85em;
-            resize: vertical;
-            min-height: 36px;
-            max-height: 120px;
-        }
-        #clipboard-panel textarea:focus { border-color: #8b5cf6; outline: none; }
+        .btn-clip[disabled] { background: #4b5563; cursor: not-allowed; }
+        .btn-clip.hidden { display: none; }
         #screen {
             flex: 1;
             overflow: hidden;
@@ -102,12 +81,8 @@
         <h1>Sandfire Console</h1>
         <span id="status">Connecting...</span>
         <button class="btn btn-keys" id="ctrlAltDelBtn">Ctrl+Alt+Del</button>
-        <button class="btn btn-clip" id="clipboardBtn">Clipboard</button>
+        <button class="btn btn-clip hidden" id="clipboardBtn">Enable clipboard sync</button>
         <button class="btn btn-back" onclick="window.close(); window.location='/';">Close</button>
-    </div>
-    <div id="clipboard-panel">
-        <textarea id="clipboard-text" rows="1" placeholder="Clipboard text (syncs automatically when possible)"></textarea>
-        <button class="btn" id="clipSendBtn">Send to VM</button>
     </div>
     <div id="screen"></div>
 
@@ -126,6 +101,7 @@
         }
 
         let rfb;
+        let connected = false;
 
         function setStatus(text, className) {
             const status = document.getElementById('status');
@@ -151,11 +127,14 @@
             rfb.resizeSession = false;
 
             rfb.addEventListener('connect', () => {
+                connected = true;
                 setStatus('Connected', 'status-connected');
                 document.title = `${vmId} - Sandfire Console`;
+                if (syncEnabled) syncHostToVM();
             });
 
             rfb.addEventListener('disconnect', (e) => {
+                connected = false;
                 if (e.detail.clean) {
                     setStatus('Disconnected');
                 } else {
@@ -181,43 +160,79 @@
 
         // Clipboard support
         const clipboardBtn = document.getElementById('clipboardBtn');
-        const clipboardPanel = document.getElementById('clipboard-panel');
-        const clipboardText = document.getElementById('clipboard-text');
-        const clipSendBtn = document.getElementById('clipSendBtn');
         const hasClipboardAPI = navigator.clipboard && window.isSecureContext;
+        let lastSynced = '';
+        let syncEnabled = false;
 
-        clipboardBtn.addEventListener('click', () => {
-            clipboardPanel.classList.toggle('show');
-            clipboardBtn.classList.toggle('active');
-        });
-
-        // Send clipboard text to VM (manual fallback)
-        clipSendBtn.addEventListener('click', () => {
-            if (rfb && clipboardText.value) {
-                rfb.clipboardPasteFrom(clipboardText.value);
-            }
-        });
-
-        // VM → Host: receive clipboard from VNC server
         function onClipboard(e) {
-            clipboardText.value = e.detail.text;
-            if (hasClipboardAPI) {
-                navigator.clipboard.writeText(e.detail.text).catch(() => {});
-            }
+            if (!hasClipboardAPI) return;
+            const text = e.detail.text;
+            navigator.clipboard.writeText(text).then(() => {
+                lastSynced = text;
+            }).catch(err => {
+                console.warn('Clipboard writeText failed:', err);
+            });
         }
 
-        // Host → VM: send host clipboard to VNC server on focus
-        function onFocus() {
-            if (!rfb || !hasClipboardAPI) return;
+        function syncHostToVM() {
+            if (!connected || !syncEnabled) return;
             navigator.clipboard.readText().then(text => {
-                if (text) {
-                    clipboardText.value = text;
+                if (text && text !== lastSynced) {
+                    lastSynced = text;
                     rfb.clipboardPasteFrom(text);
                 }
-            }).catch(() => {});
+            }).catch(err => {
+                console.warn('Clipboard readText failed:', err);
+            });
         }
 
-        window.addEventListener('focus', onFocus);
+        function enableClipboardSync() {
+            syncEnabled = true;
+            clipboardBtn.classList.add('hidden');
+            window.addEventListener('focus', syncHostToVM);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) syncHostToVM();
+            });
+            syncHostToVM();
+        }
+
+        function showBlockedButton() {
+            clipboardBtn.classList.remove('hidden');
+            clipboardBtn.disabled = true;
+            clipboardBtn.textContent = 'Clipboard blocked';
+            clipboardBtn.title = 'Allow clipboard access in your browser site settings to enable sync.';
+        }
+
+        function wireEnableButton() {
+            clipboardBtn.classList.remove('hidden');
+            clipboardBtn.addEventListener('click', () => {
+                navigator.clipboard.readText().then(text => {
+                    if (text && connected) {
+                        lastSynced = text;
+                        rfb.clipboardPasteFrom(text);
+                    }
+                    enableClipboardSync();
+                }).catch(err => {
+                    console.warn('Clipboard permission denied:', err);
+                    showBlockedButton();
+                });
+            });
+        }
+
+        if (hasClipboardAPI && navigator.permissions) {
+            navigator.permissions.query({ name: 'clipboard-read' }).then(status => {
+                if (status.state === 'granted') {
+                    enableClipboardSync();
+                } else if (status.state === 'prompt') {
+                    wireEnableButton();
+                } else {
+                    showBlockedButton();
+                }
+            }).catch(() => {
+                // Permissions API unsupported — fall back to showing the enable button.
+                wireEnableButton();
+            });
+        }
 
         // Start connection
         connect();
