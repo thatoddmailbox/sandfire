@@ -206,11 +206,8 @@
         function wireEnableButton() {
             clipboardBtn.classList.remove('hidden');
             clipboardBtn.addEventListener('click', () => {
-                navigator.clipboard.readText().then(text => {
-                    if (text && connected) {
-                        lastSynced = text;
-                        rfb.clipboardPasteFrom(text);
-                    }
+                // Probe permission under user activation; enableClipboardSync handles the first paste.
+                navigator.clipboard.readText().then(() => {
                     enableClipboardSync();
                 }).catch(err => {
                     console.warn('Clipboard permission denied:', err);
