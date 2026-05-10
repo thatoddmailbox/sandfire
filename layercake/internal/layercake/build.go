@@ -472,7 +472,10 @@ func (b *Builder) setupSSHAgentForwarding(rootfsDir, hostSockPath string) (clean
 	}
 
 	cleanup = func() {
-		exec.Command("umount", hostMountPoint).Run()
+		if out, err := exec.Command("umount", hostMountPoint).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to unmount SSH agent socket at %s: %v: %s\n",
+				hostMountPoint, err, strings.TrimSpace(string(out)))
+		}
 		os.RemoveAll(sshDir)
 	}
 
@@ -490,7 +493,11 @@ func (b *Builder) setupDeviceMounts(rootfsDir string) (cleanup func(), err error
 	cleanupMounted := func() {
 		// Unmount in reverse order
 		for i := len(mounted) - 1; i >= 0; i-- {
-			exec.Command("umount", mounted[i]).Run()
+			out, err := exec.Command("umount", mounted[i]).CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to unmount %s: %v: %s\n",
+					mounted[i], err, strings.TrimSpace(string(out)))
+			}
 		}
 	}
 
