@@ -278,8 +278,10 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 
 	// Unmount
 	fmt.Println("Unmounting rootfs...")
-	if err := exec.Command("umount", mountDir).Run(); err != nil {
-		return fmt.Errorf("failed to unmount rootfs: %w", err)
+	umountCmd := exec.Command("umount", mountDir)
+	umountOut, err := umountCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to unmount rootfs: %w: %s", err, strings.TrimSpace(string(umountOut)))
 	}
 
 	// Write build hash
