@@ -18,14 +18,16 @@ type Server struct {
 	db          *db.DB
 	vmManager   *vm.Manager
 	certManager *certs.Manager
+	baseDomain  string
 	mux         *http.ServeMux
 }
 
-func NewServer(database *db.DB, vmManager *vm.Manager, certManager *certs.Manager) *Server {
+func NewServer(database *db.DB, vmManager *vm.Manager, certManager *certs.Manager, baseDomain string) *Server {
 	s := &Server{
 		db:          database,
 		vmManager:   vmManager,
 		certManager: certManager,
+		baseDomain:  baseDomain,
 		mux:         http.NewServeMux(),
 	}
 	s.registerRoutes()

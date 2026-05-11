@@ -38,7 +38,8 @@ Usage: sandfire
 The server listens on port 9000 and stores data in ./data/
 
 Environment variables:
-  SANDFIRE_DOMAIN        Base domain for VMs (default: sand.studer.dev)
+  SANDFIRE_DOMAIN        Base domain for VMs (required for certificate management
+                         and subdomain routing)
   CLOUDFLARE_API_TOKEN   Cloudflare API token for certificate management
   SANDFIRE_ACME_STAGING  Set to "1" to use ACME staging environment
 
@@ -95,8 +96,11 @@ Use the scripts in scripts/ to interact with the server.`)
 		log.Printf("Found %d VM(s) orphaned from previous unclean shutdown, will restart them", count)
 	}
 
+	// Base domain for VM subdomains and certificates
+	baseDomain := os.Getenv("SANDFIRE_DOMAIN")
+
 	// Initialize VM manager
-	vmManager := vm.NewManager(dataDir, networkMgr)
+	vmManager := vm.NewManager(dataDir, baseDomain, networkMgr)
 
 	// Clean up any orphaned resources from previous unclean shutdown
 	vmManager.CleanupOrphanedResources()
@@ -114,10 +118,9 @@ Use the scripts in scripts/ to interact with the server.`)
 	restoreRunningVMs(database, vmManager)
 
 	// Initialize certificate manager
-	baseDomain := os.Getenv("SANDFIRE_DOMAIN")
 	var certManager *certs.Manager
 	if baseDomain == "" {
-		log.Println("Warning: SANDFIRE_DOMAIN not set, certificate management disabled")
+		log.Println("Warning: SANDFIRE_DOMAIN not set, certificate management and subdomain routing disabled")
 	} else {
 		cloudflareToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 		if cloudflareToken == "" {
@@ -135,7 +138,7 @@ Use the scripts in scripts/ to interact with the server.`)
 	}
 
 	// Create HTTP server
-	server := api.NewServer(database, vmManager, certManager)
+	server := api.NewServer(database, vmManager, certManager, baseDomain)
 	httpServer := &http.Server{
 		Addr:    ListenAddr,
 		Handler: server,

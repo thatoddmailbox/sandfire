@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -15,27 +14,16 @@ import (
 // vmIDRegex matches VM IDs like "vm-e2aa90c4"
 var vmIDRegex = regexp.MustCompile(`^vm-[a-f0-9]{8}$`)
 
-// getBaseDomain returns the base domain from SANDFIRE_DOMAIN env var
-func getBaseDomain() string {
-	domain := os.Getenv("SANDFIRE_DOMAIN")
-	if domain == "" {
-		return "sand.studer.dev"
-	}
-	return domain
-}
-
 // extractVMID parses the Host header and extracts the VM ID if present.
 // Returns empty string for base domain requests.
 // Returns error if the subdomain pattern is invalid (too many levels).
 //
-// Examples:
-//   - sand.studer.dev -> "", nil (base domain)
-//   - vm-abc12345.sand.studer.dev -> "vm-abc12345", nil
-//   - app.vm-abc12345.sand.studer.dev -> "vm-abc12345", nil
-//   - foo.bar.vm-xxx.sand.studer.dev -> "", error (too many levels)
-func extractVMID(host string) (string, error) {
-	baseDomain := getBaseDomain()
-
+// Examples (with baseDomain="example.com"):
+//   - example.com -> "", nil (base domain)
+//   - vm-abc12345.example.com -> "vm-abc12345", nil
+//   - app.vm-abc12345.example.com -> "vm-abc12345", nil
+//   - foo.bar.vm-xxx.example.com -> "", error (too many levels)
+func extractVMID(host, baseDomain string) (string, error) {
 	// Strip port if present
 	if idx := strings.Index(host, ":"); idx != -1 {
 		host = host[:idx]
@@ -79,8 +67,8 @@ func extractVMID(host string) (string, error) {
 
 // handleCaddyGetCertificate handles GET /api/caddy/get-certificate
 // This is called by Caddy's get_certificate HTTP module to fetch certificates.
-// The domain parameter should be a VM subdomain like "vm-abc12345.sand.studer.dev"
-// or "app.vm-abc12345.sand.studer.dev".
+// The domain parameter should be a VM subdomain like "vm-abc12345.<base-domain>"
+// or "app.vm-abc12345.<base-domain>".
 // Returns PEM-encoded certificate chain and private key concatenated.
 func (s *Server) handleCaddyGetCertificate(w http.ResponseWriter, r *http.Request) {
 	if s.certManager == nil {
@@ -99,7 +87,7 @@ func (s *Server) handleCaddyGetCertificate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	vmID, err := extractVMID(domain)
+	vmID, err := extractVMID(domain, s.baseDomain)
 	if err != nil {
 		log.Printf("get-certificate: rejecting %q: %v", domain, err)
 		http.Error(w, "invalid domain", http.StatusBadRequest)
@@ -349,8 +337,11 @@ const vmUnreachableHTML = `<!DOCTYPE html>
 // non-domain requests (localhost, IP, other hostnames), and returns
 // error only for invalid subdomain patterns under the base domain.
 func (s *Server) isVMSubdomain(r *http.Request) (string, error) {
+	if s.baseDomain == "" {
+		return "", nil
+	}
+
 	host := r.Host
-	baseDomain := getBaseDomain()
 
 	// Strip port if present for comparison
 	hostWithoutPort := host
@@ -360,12 +351,12 @@ func (s *Server) isVMSubdomain(r *http.Request) (string, error) {
 
 	// If not related to our base domain at all, use normal routing
 	// This handles localhost, IP addresses, and other hostnames
-	if hostWithoutPort != baseDomain && !strings.HasSuffix(hostWithoutPort, "."+baseDomain) {
+	if hostWithoutPort != s.baseDomain && !strings.HasSuffix(hostWithoutPort, "."+s.baseDomain) {
 		return "", nil
 	}
 
 	// It's our domain - extract VM ID or validate pattern
-	return extractVMID(host)
+	return extractVMID(host, s.baseDomain)
 }
 
 // proxyTimeout is the timeout for proxy connections

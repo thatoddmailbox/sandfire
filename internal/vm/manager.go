@@ -27,12 +27,13 @@ type Manager struct {
 	jailerGID       int
 	useJailer       bool
 	networkMgr      *network.Manager
+	baseDomain      string
 
 	mu        sync.RWMutex
 	processes map[string]*FirecrackerProcess
 }
 
-func NewManager(dataDir string, networkMgr *network.Manager) *Manager {
+func NewManager(dataDir, baseDomain string, networkMgr *network.Manager) *Manager {
 	// Find firecracker binary
 	fcPath := "/usr/local/bin/firecracker"
 	if p, err := exec.LookPath("firecracker"); err == nil {
@@ -46,6 +47,7 @@ func NewManager(dataDir string, networkMgr *network.Manager) *Manager {
 		jailerGID:       1000,
 		useJailer:       true,
 		networkMgr:      networkMgr,
+		baseDomain:      baseDomain,
 		processes:       make(map[string]*FirecrackerProcess),
 	}
 }
@@ -361,7 +363,7 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 	// Configure MMDS with VM metadata (network interface ID is "eth0")
 	// Include Claude credentials if available on the host
 	claudeCredentials := loadClaudeConfig()
-	vmDomain := getVMDomain(vm.ID)
+	vmDomain := m.getVMDomain(vm.ID)
 	if err := proc.configureMMDS("eth0", vm.ID, vm.Name, vmDomain, claudeCredentials, vmContext); err != nil {
 		proc.stop()
 		m.networkMgr.DeleteTap(tapDevice)
@@ -522,11 +524,10 @@ func loadClaudeConfig() (credentials json.RawMessage) {
 	return credentials
 }
 
-// getVMDomain returns the full domain for a VM based on SANDFIRE_DOMAIN env var.
-func getVMDomain(vmID string) string {
-	baseDomain := os.Getenv("SANDFIRE_DOMAIN")
-	if baseDomain == "" {
-		baseDomain = "sand.studer.dev"
+// getVMDomain returns the full domain for a VM, or empty string if no base domain is configured.
+func (m *Manager) getVMDomain(vmID string) string {
+	if m.baseDomain == "" {
+		return ""
 	}
-	return vmID + "." + baseDomain
+	return vmID + "." + m.baseDomain
 }

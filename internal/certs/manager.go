@@ -547,7 +547,7 @@ func (m *Manager) cloudflareRequest(ctx context.Context, method, path string, bo
 
 func (m *Manager) getCloudflareZoneID() (string, error) {
 	// Extract the parent domain from baseDomain
-	// e.g., "sand.studer.dev" -> look for "studer.dev" zone
+	// e.g., "sand.example.com" -> look for "example.com" zone
 	parts := strings.Split(m.baseDomain, ".")
 	if len(parts) < 2 {
 		return "", fmt.Errorf("invalid base domain: %s", m.baseDomain)
