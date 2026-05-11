@@ -1,17 +1,15 @@
 # Sandfire
 
-![Screenshot of web UI](./screenshot.png)
-
-Sandfire is a service that lets you create isolated environments for AI coding agents. It uses [Firecracker](https://firecracker-microvm.github.io/) to create fast, secure microVMs.
+Sandfire is a service that lets you create isolated environments for AI coding agents or any other ephermeral workload. It uses [Firecracker](https://firecracker-microvm.github.io/) to create fast, secure microVMs.
 
 These environments can be preconfigured (using the companion [layercake](./layercake) tool) with your codebase and tools already installed. This means it's easy to launch several VMs and have multiple agents trying different things all at once.
+
+![Screenshot of web UI](./screenshot.png)
 
 <details>
 <summary><b>Why not containers/Docker?</b></summary>
 
-I did not feel that containers provided the right level of isolation (especially from a security perspective, it just takes one wrong bind mount and then you have a container escape).
-
-I also wanted to run applications that use Docker containers or Docker Compose inside the isolated environment. Nesting Docker inside Docker is complex and risky. But running Docker inside a microVM is easy, just install it like you normally would!
+I did not feel that containers provided the right level of isolation. Also, I wanted to run applications that use Docker containers or Docker Compose inside the isolated environment. Nesting Docker inside Docker is complex and risky. But running Docker inside a microVM is easy, just install it like you normally would!
 
 The main downside is that you have to make your own VM images, although [layercake](./layercake) can help with that. But if you have containers already, it is pretty easy to make a VM image that just installs Docker and then runs your application's containers.
 
@@ -45,19 +43,19 @@ You should make sure you cloned the repository with `--recursive`. If you didn't
 go build -o sandfire ./cmd/sandfire
 ```
 
-### 2. Build Layercake
+### 2. Start Sandfire
+
+```bash
+sudo ./sandfire
+```
+
+### 3. Build Layercake
 
 The companion [layercake](./layercake) tool helps with building VM images.
 
 ```bash
 cd layercake
 go build -o layercake ./cmd/layercake
-```
-
-### 3. Start Sandfire
-
-```bash
-sudo ./sandfire
 ```
 
 ### 4. Build VM images
