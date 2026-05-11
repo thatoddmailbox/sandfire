@@ -278,6 +278,12 @@ func (b *Builder) buildDerivativeLayer(layer *Layer, workDir string) error {
 
 	// Unmount
 	fmt.Println("Unmounting rootfs...")
+	syncCmd := exec.Command("sync", "-f", mountDir)
+	syncOut, err := syncCmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to sync %s before unmount: %v: %s\n",
+			mountDir, err, strings.TrimSpace(string(syncOut)))
+	}
 	umountCmd := exec.Command("umount", mountDir)
 	umountOut, err := umountCmd.CombinedOutput()
 	if err != nil {
