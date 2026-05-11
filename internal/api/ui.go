@@ -37,7 +37,7 @@ const indexHTML = `<!DOCTYPE html>
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        .container { max-width: 1000px; margin: 0 auto; }
+        .container { max-width: 1100px; margin: 0 auto; }
         .section {
             background: #fff;
             border-radius: 8px;
