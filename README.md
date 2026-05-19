@@ -1,6 +1,6 @@
 # Sandfire
 
-Sandfire is a service that lets you create isolated environments for AI coding agents or any other ephermeral workload. It uses [Firecracker](https://firecracker-microvm.github.io/) to create fast, secure microVMs.
+Sandfire is a service that lets you create isolated environments for AI coding agents or any other ephemeral workload. It uses [Firecracker](https://firecracker-microvm.github.io/) to create fast, secure microVMs.
 
 These environments can be preconfigured (using the companion [layercake](./layercake) tool) with your codebase and tools already installed. This means it's easy to launch several VMs and have multiple agents trying different things all at once.
 
