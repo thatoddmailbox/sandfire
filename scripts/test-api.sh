@@ -159,10 +159,14 @@ log_info "Test 10: Delete VM"
 curl -s -X POST "${API_URL}/api/vms/${VM_ID}/stop" > /dev/null 2>&1 || true
 sleep 1
 
-RESPONSE=$(curl -s -X DELETE "${API_URL}/api/vms/${VM_ID}")
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${API_URL}/api/vms/${VM_ID}")
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+    log_info "Delete VM: OK"
+else
+    log_error "Delete VM: FAILED (HTTP $HTTP_CODE)"
+fi
 
-# Already deleted in first call, verify it's gone
+# Verify it's gone
 RESPONSE=$(curl -s "${API_URL}/api/vms/${VM_ID}")
 check_response "$RESPONSE" '"error"' "VM deleted"
 
