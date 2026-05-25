@@ -30,7 +30,7 @@ The main downside is that you have to make your own VM images, although [layerca
 	- On Arch-based systems, you should use the [binaries from the latest Firecracker release](https://github.com/firecracker-microvm/firecracker/releases/latest) instead of the Arch package.
 	- This is because the Arch package is built with glibc which isn't supported by the jailer.
 - Root privileges (for network configuration and jailer)
-- Go 1.21+ (for building)
+- Go 1.25+ (for building)
 - `debootstrap` (for layercake to build images)
 
 ## Quick Start
