@@ -47,17 +47,6 @@ Delete a VM (must be stopped first).
 ./delete-vm.sh vm-abc12345
 ```
 
-## VM Access
-
-VMs include a telnet server. After starting a VM:
-```bash
-telnet <vm-ip>
-# Login: root
-# Password: sandfire
-```
-
-SSH is also installed but may be slow to respond due to entropy issues in the VM.
-
 ## Configuration
 
 Set `SANDFIRE_API` environment variable to use a different API endpoint:
