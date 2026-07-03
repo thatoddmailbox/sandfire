@@ -78,7 +78,7 @@ chown sandfire:sandfire "${SANDFIRE_HOME}/.claude.json"
 
 # Also set some useful settings in the claude settings.json file
 mkdir -p "${SANDFIRE_HOME}/.claude"
-echo '{"cleanupPeriodDays": 99999, "model": "opus[1m]", "statusLine": {"type": "command", "command": "/home/sandfire/.claude/statusline.sh"}}' > "${SANDFIRE_HOME}/.claude/settings.json"
+echo '{"cleanupPeriodDays": 99999, "model": "opus[1m]", "respondToBashCommands": false, "statusLine": {"type": "command", "command": "/home/sandfire/.claude/statusline.sh"}}' > "${SANDFIRE_HOME}/.claude/settings.json"
 
 # Create statusline script that shows context window usage percentage
 cat > "${SANDFIRE_HOME}/.claude/statusline.sh" << 'EOF'
