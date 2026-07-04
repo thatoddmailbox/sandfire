@@ -2,10 +2,10 @@
 set -e
 
 # Install Go
-curl -LO https://go.dev/dl/go1.25.6.linux-amd64.tar.gz
+curl -LO https://go.dev/dl/go1.26.4.linux-amd64.tar.gz
 rm -rf /usr/local/go
-tar -C /usr/local -xzf go1.25.6.linux-amd64.tar.gz
-rm go1.25.6.linux-amd64.tar.gz
+tar -C /usr/local -xzf go1.26.4.linux-amd64.tar.gz
+rm go1.26.4.linux-amd64.tar.gz
 
 # Add Go to system-wide PATH and set GOROOT
 cat >> /etc/profile << 'EOF'
