@@ -128,6 +128,12 @@ if [ -n "$VM_DOMAIN" ]; then
     echo "$VM_DOMAIN" > /etc/sandfire/domain
 fi
 
+# Write VM name to /etc/sandfire/name so the shell prompt can display it
+if [ -n "$VM_NAME" ]; then
+    mkdir -p /etc/sandfire
+    echo "$VM_NAME" > /etc/sandfire/name
+fi
+
 # Update MOTD with VM information
 cat > /etc/motd << EOF
 
