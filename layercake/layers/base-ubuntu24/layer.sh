@@ -246,5 +246,28 @@ if [ -n "$GIT_USER_NAME" ] || [ -n "$GIT_USER_EMAIL" ]; then
     [ -n "$GIT_USER_EMAIL" ] && echo "  user.email = $GIT_USER_EMAIL"
 fi
 
+# Prepend the sandfire VM name to the shell prompt, e.g. [test-vm] sandfire@sandfire-vm:~$
+# The name is read at prompt time from /etc/sandfire/name (written at boot by
+# sandfire-mmds-motd.service). If the file is missing, the prompt is left unchanged.
+# Appended to the end of .bashrc so it runs after the default PS1 is set.
+read -r -d '' SANDFIRE_PROMPT_SNIPPET << 'EOF' || true
+
+# Prepend the sandfire VM name to the prompt (in bold magenta)
+if [ -r /etc/sandfire/name ]; then
+    __sandfire_name="$(cat /etc/sandfire/name 2>/dev/null)"
+    if [ -n "$__sandfire_name" ]; then
+        PS1="\[\033[01;35m\][${__sandfire_name}]\[\033[00m\] ${PS1}"
+    fi
+    unset __sandfire_name
+fi
+EOF
+
+for bashrc in /etc/skel/.bashrc /root/.bashrc /home/sandfire/.bashrc; do
+    if [ -f "$bashrc" ]; then
+        printf '%s\n' "$SANDFIRE_PROMPT_SNIPPET" >> "$bashrc"
+    fi
+done
+chown sandfire:sandfire /home/sandfire/.bashrc
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
