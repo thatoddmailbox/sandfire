@@ -374,5 +374,258 @@ esac
 SCRIPT
 chmod +x /usr/local/bin/sandfire-oc
 
+# -----------------------------------------------------------------------------
+# sandfire-files: static workspace browser with client-side Markdown rendering
+# (off by default; mirrors the sandfire-oc toggle pattern above)
+# -----------------------------------------------------------------------------
+
+# Build the self-contained Markdown render shell (render.html).
+# Markdown is rendered CLIENT-SIDE: the shell fetches the raw file and renders
+# it in the browser via inlined marked.js + highlight.js. This is immune to file
+# content (a file containing {{ }} can't trigger server-side template execution)
+# and works on the Caddy shipped by this layer without needing readFile (2.7+).
+#
+# The libraries are pinned to immutable versioned jsDelivr URLs and verified by
+# sha256, so a changed/compromised CDN fails the build instead of baking bad
+# bytes. Downloaded into a temp build dir; only the generated render.html ships.
+FILES_ASSETS="/etc/caddy/files-assets"
+FILES_BUILD="$(mktemp -d)"
+
+curl -fsSL -o "$FILES_BUILD/marked.min.js"        "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
+curl -fsSL -o "$FILES_BUILD/highlight.min.js"     "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"
+curl -fsSL -o "$FILES_BUILD/hljs-github.css"      "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css"
+curl -fsSL -o "$FILES_BUILD/hljs-github-dark.css" "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
+
+sha256sum -c - <<SUMS
+15fabce5b65898b32b03f5ed25e9f891a729ad4c0d6d877110a7744aa847a894  $FILES_BUILD/marked.min.js
+837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846  $FILES_BUILD/highlight.min.js
+3a9a5def8b9c311e5ae43abde85c63133185eed4f0d9f67fea4b00a8308cf066  $FILES_BUILD/hljs-github.css
+9f208d022102b1d0c7aebfecd8e42ca7997d5de636649d2b31ea63093d809019  $FILES_BUILD/hljs-github-dark.css
+SUMS
+
+mkdir -p "$FILES_ASSETS"
+{
+    cat << 'HTML_HEAD'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loading…</title>
+<style>
+:root {
+  --bg:#fff; --fg:#1f2328; --muted:#59636e; --border:#d1d9e0;
+  --bar-bg:#f6f8fa; --link:#0969da; --code-bg:#f6f8fa; --code-border:#d1d9e0;
+  --quote-fg:#59636e; --quote-border:#d1d9e0; --table-alt:#f6f8fa;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --border:#3d444d;
+    --bar-bg:#161b22; --link:#4493f8; --code-bg:#161b22; --code-border:#3d444d;
+    --quote-fg:#9198a1; --quote-border:#3d444d; --table-alt:#161b22;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+  font-size:16px;line-height:1.6}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;
+  flex-wrap:wrap;padding:10px 16px;background:var(--bar-bg);
+  border-bottom:1px solid var(--border);font-size:14px}
+.topbar .path{color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}
+.topbar .spacer{flex:1 1 auto}
+.topbar a{color:var(--link);text-decoration:none;white-space:nowrap}
+.topbar a:hover{text-decoration:underline}
+.content{max-width:900px;margin:0 auto;padding:32px 24px 96px}
+.content h1,.content h2{padding-bottom:.3em;border-bottom:1px solid var(--border)}
+.content h1,.content h2,.content h3,.content h4{margin-top:1.5em;margin-bottom:.6em;line-height:1.25}
+.content h1:first-child{margin-top:0}
+.content a{color:var(--link);text-decoration:none}
+.content a:hover{text-decoration:underline}
+.content code{background:var(--code-bg);border:1px solid var(--code-border);
+  padding:.15em .4em;border-radius:6px;font-size:85%;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.content pre{background:var(--code-bg);border:1px solid var(--code-border);
+  padding:16px;border-radius:6px;overflow-x:auto;line-height:1.45}
+.content pre code{background:none;border:0;padding:0;font-size:85%}
+.content blockquote{margin:0 0 16px;padding:0 1em;color:var(--quote-fg);
+  border-left:.25em solid var(--quote-border)}
+.content table{border-collapse:collapse;display:block;overflow-x:auto;margin-bottom:16px}
+.content th,.content td{border:1px solid var(--border);padding:6px 13px}
+.content tr:nth-child(2n){background:var(--table-alt)}
+.content img{max-width:100%}
+.content hr{border:0;border-top:1px solid var(--border);margin:24px 0}
+.loading{color:var(--muted)}
+</style>
+<style>
+HTML_HEAD
+
+    cat "$FILES_BUILD/hljs-github.css"
+
+    cat << 'HTML_DARK_OPEN'
+</style>
+<style>
+@media (prefers-color-scheme: dark){
+HTML_DARK_OPEN
+
+    cat "$FILES_BUILD/hljs-github-dark.css"
+
+    cat << 'HTML_BODY'
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="path" id="path"></span>
+  <span class="spacer"></span>
+  <a href="./" title="Browse the containing folder">📁 Folder</a>
+  <a href="/" title="Browse the workspace root">🏠 Root</a>
+  <a id="raw" title="Download the raw file">⬇ Raw</a>
+</div>
+<article id="content" class="content loading">Loading…</article>
+<script>
+HTML_BODY
+
+    cat "$FILES_BUILD/marked.min.js"
+
+    printf '\n</script>\n<script>\n'
+
+    cat "$FILES_BUILD/highlight.min.js"
+
+    cat << 'HTML_RUNTIME'
+
+</script>
+<script>
+(function(){
+  var rawPath = location.pathname;
+  var pretty = decodeURIComponent(rawPath);
+  document.getElementById('path').textContent = pretty;
+  document.getElementById('raw').href = '/_raw' + rawPath;
+  var base = pretty.split('/').pop();
+  document.title = base || pretty;
+  var content = document.getElementById('content');
+  fetch('/_rawtext' + rawPath)
+    .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function(md){
+      content.classList.remove('loading');
+      content.innerHTML = marked.parse(md);
+      content.querySelectorAll('pre code').forEach(function(el){
+        try { hljs.highlightElement(el); } catch(e){}
+      });
+    })
+    .catch(function(e){
+      content.textContent = 'Failed to load file: ' + e.message;
+    });
+})();
+</script>
+</body>
+</html>
+HTML_RUNTIME
+} > "$FILES_ASSETS/render.html"
+
+# Only the caddy process needs to read the assets.
+chown -R caddy:caddy "$FILES_ASSETS"
+rm -rf "$FILES_BUILD"
+
+# Dedicated Caddy instance config (separate from the main auto-generated Caddyfile).
+# admin off  -> don't share/steal the main Caddy's admin socket (localhost:2019).
+# auto_https off -> TLS is terminated by the main Caddy reverse-proxying files.<domain>.
+cat > /etc/caddy/sandfire-files.Caddyfile << 'EOF'
+{
+	admin off
+	auto_https off
+}
+
+:8088 {
+	# Public raw download: forces the browser to download untouched bytes
+	handle_path /_raw/* {
+		root * /home/sandfire/workspace
+		header Content-Disposition attachment
+		file_server
+	}
+
+	# Raw text: consumed by render.html's fetch(); served as-is (no download header)
+	handle_path /_rawtext/* {
+		root * /home/sandfire/workspace
+		file_server
+	}
+
+	# Markdown: *.md / *.markdown -> static client-side render shell
+	@md path *.md *.markdown
+	handle @md {
+		root * /etc/caddy/files-assets
+		rewrite * /render.html
+		file_server
+	}
+
+	# Everything else: browsable directory listings + raw static files
+	handle {
+		root * /home/sandfire/workspace
+		file_server browse
+	}
+}
+EOF
+
+# Systemd unit - ships DISABLED (no WantedBy symlink until the toggle enables it),
+# so it never starts at boot on a fresh image.
+cat > /etc/systemd/system/sandfire-files.service << 'EOF'
+[Unit]
+Description=Sandfire Files - static file browser with Markdown rendering
+After=network.target
+
+[Service]
+Type=simple
+User=sandfire
+Group=sandfire
+Environment=HOME=/home/sandfire
+Environment=XDG_DATA_HOME=/home/sandfire/.local/share
+Environment=XDG_CONFIG_HOME=/home/sandfire/.config
+ExecStart=/usr/bin/caddy run --config /etc/caddy/sandfire-files.Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+# NOTE: deliberately NOT `systemctl enable`d - the base image ships it disabled.
+
+# Toggle script (on|off|status) - mirrors sandfire-oc.
+cat > /usr/local/bin/sandfire-files << 'SCRIPT'
+#!/bin/bash
+set -e
+if [ "$(id -u)" -ne 0 ]; then exec sudo "$0" "$@"; fi
+SERVICES_FILE="/etc/sandfire/services"
+SERVICE_NAME="files"
+SERVICE_PORT="8088"
+SYSTEMD_UNIT="sandfire-files.service"
+case "$1" in
+    on)
+        if ! grep -q "^${SERVICE_NAME} " "$SERVICES_FILE" 2>/dev/null; then
+            echo "${SERVICE_NAME} ${SERVICE_PORT}" >> "$SERVICES_FILE"
+        fi
+        systemctl enable "$SYSTEMD_UNIT" &>/dev/null
+        systemctl start "$SYSTEMD_UNIT"
+        systemctl restart sandfire-generate-caddyfile
+        systemctl restart caddy
+        DOMAIN=$(cat /etc/sandfire/domain 2>/dev/null)
+        echo "Files browser enabled on https://${SERVICE_NAME}.${DOMAIN}"
+        echo "WARNING: this exposes your ENTIRE workspace (including dotfiles, .git,"
+        echo "         .env, credentials, .claude/) UNAUTHENTICATED to anyone who can"
+        echo "         reach that URL. Run 'sandfire-files off' when you're done."
+        ;;
+    off)
+        systemctl stop "$SYSTEMD_UNIT" 2>/dev/null || true
+        systemctl disable "$SYSTEMD_UNIT" 2>/dev/null || true
+        sed -i "/^${SERVICE_NAME} /d" "$SERVICES_FILE"
+        systemctl restart sandfire-generate-caddyfile
+        systemctl restart caddy
+        echo "Files browser disabled"
+        ;;
+    status) systemctl status "$SYSTEMD_UNIT" --no-pager || true ;;
+    *) echo "Usage: sandfire-files {on|off|status}"; exit 1 ;;
+esac
+SCRIPT
+chmod +x /usr/local/bin/sandfire-files
+
 # Clean up
 rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
