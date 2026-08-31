@@ -103,6 +103,11 @@ VMs have these users by default:
 
 It's recommended to also set up the companion [sshproxy](./sshproxy) tool, which allows accessing the VMs remotely.
 
+## Security
+Note that the sandfire web server does not have any authentication functionality! It is recommended to set up a web server like nginx or Caddy as a reverse proxy. You can then add authentication in that layer.
+
+In terms of the VMs, there is currently no network sandboxing. All VMs have unrestricted access to the internet, including your local network and other VMs! This is something I'd like to change at some point (restricting access to LLM provider APIs plus a custom allowlist) but hasn't been added yet.
+
 ## Companion tools
 
 In this same repository are two additional tools that help with using Sandfire VMs:
