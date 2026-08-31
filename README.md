@@ -4,6 +4,8 @@ Sandfire is a service that lets you create isolated environments for AI coding a
 
 These environments can be preconfigured (using the companion [layercake](./layercake) tool) with your codebase and tools already installed. This means it's easy to launch several VMs and have multiple agents trying different things all at once.
 
+VMs also get their own subdomain and run a reverse proxy, so you can access any web-based services running inside the VM. (And this means agents can provide you with a link to preview their work.)
+
 ![Screenshot of web UI](./screenshot.png)
 
 <details>
@@ -11,17 +13,17 @@ These environments can be preconfigured (using the companion [layercake](./layer
 
 I did not feel that containers provided the right level of isolation. Also, I wanted to run applications that use Docker containers or Docker Compose inside the isolated environment. Nesting Docker inside Docker is complex and risky. But running Docker inside a microVM is easy, just install it like you normally would!
 
-The main downside is that you have to make your own VM images, although [layercake](./layercake) can help with that. But if you have containers already, it is pretty easy to make a VM image that just installs Docker and then runs your application's containers.
+The main downside is that you have to make your own VM images, although [layercake](./layercake) can help with that. You can also make a VM image that just installs Docker and then runs your application's containers.
 
 </details>
 
 ## Features
 
-- REST API for VM lifecycle management (create, start, stop, delete)
 - Firecracker VMM with jailer for security isolation
 - Fast VM startup times (a few seconds)
-- Automatic networking with bridge interface and NAT
-- SQLite database for persistent state
+- Web interface and REST API for VM management (including web VNC access to the VMs)
+- Web proxy to route different subdomains to each VM
+- SSH proxy to allow SSH-ing into each VM
 
 ## Requirements
 
@@ -32,6 +34,7 @@ The main downside is that you have to make your own VM images, although [layerca
 - Root privileges (for network configuration and jailer)
 - Go 1.25+ (for building)
 - `debootstrap` (for layercake to build images)
+	- On Arch this can be installed via pacman.
 
 ## Quick Start
 
