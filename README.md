@@ -36,7 +36,7 @@ The main downside is that you have to make your own VM images, although [layerca
 - `debootstrap` (for layercake to build images)
 	- On Arch this can be installed via pacman.
 
-## Quick Start
+## Quick start
 
 You should make sure you cloned the repository with `--recursive`. If you didn't, you can also run the command `git submodule update --init --recursive` to clone the submodules.
 
