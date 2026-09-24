@@ -504,7 +504,7 @@ HTML_BODY
   var base = pretty.split('/').pop();
   document.title = base || pretty;
   var content = document.getElementById('content');
-  fetch('/_rawtext' + rawPath)
+  fetch('/_rawtext' + rawPath, {cache: 'no-cache'})
     .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
     .then(function(md){
       content.classList.remove('loading');
@@ -537,6 +537,11 @@ cat > /etc/caddy/sandfire-files.Caddyfile << 'EOF'
 }
 
 :8088 {
+	# Workspace files change constantly: make browsers revalidate every time
+	# (ETag/Last-Modified still allow cheap 304s). Without this, heuristic caching
+	# lets subresources like render.html's fetch() serve stale content on reload.
+	header Cache-Control "no-cache"
+
 	# Public raw download: forces the browser to download untouched bytes
 	handle_path /_raw/* {
 		root * /home/sandfire/workspace
