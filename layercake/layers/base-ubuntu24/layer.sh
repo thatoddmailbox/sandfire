@@ -226,7 +226,8 @@ apt-get upgrade -y
 
 # Install jq for JSON processing (used by sandfire-get-context and other scripts)
 # Install locales package so we can generate en_US.UTF-8
-apt-get install -y jq locales
+# Install unzip package because it can be useful for unpackaging things
+apt-get install -y jq locales unzip
 
 # Generate en_US.UTF-8 locale and set it as the system default
 sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
