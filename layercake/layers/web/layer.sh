@@ -478,7 +478,7 @@ HTML_DARK_OPEN
 <div class="topbar">
   <span class="path" id="path"></span>
   <span class="spacer"></span>
-  <a href="./" title="Browse the containing folder">📁 Folder</a>
+  <a id="folder" href="./" title="Browse the containing folder">📁 Folder</a>
   <a href="/" title="Browse the workspace root">🏠 Root</a>
   <a id="raw" title="Download the raw file">⬇ Raw</a>
 </div>
@@ -501,6 +501,8 @@ HTML_BODY
   var pretty = decodeURIComponent(rawPath);
   document.getElementById('path').textContent = pretty;
   document.getElementById('raw').href = '/_raw' + rawPath;
+  // Always list the folder, even if it has an index.html
+  document.getElementById('folder').href = '/_browse' + rawPath.slice(0, rawPath.lastIndexOf('/') + 1);
   var base = pretty.split('/').pop();
   document.title = base || pretty;
   var content = document.getElementById('content');
@@ -553,6 +555,24 @@ cat > /etc/caddy/sandfire-files.Caddyfile << 'EOF'
 	handle_path /_rawtext/* {
 		root * /home/sandfire/workspace
 		file_server
+	}
+
+	# Always-listing view: /_browse/<dir>/ lists a folder even if it contains
+	# index.html/index.txt. Listing links are relative, so this sticks while
+	# navigating subfolders; clicking a file redirects back to its normal URL
+	# (so Markdown still renders). {uri} keeps the path escaped (e.g. '#', spaces).
+	redir /_browse /_browse/
+	handle_path /_browse/* {
+		root * /home/sandfire/workspace
+		@file {
+			not path */
+			file
+		}
+		redir @file {uri}
+		file_server browse {
+			# Nonexistent name: disables index files so the listing always shows
+			index .sandfire-no-index
+		}
 	}
 
 	# Markdown: *.md / *.markdown -> static client-side render shell
