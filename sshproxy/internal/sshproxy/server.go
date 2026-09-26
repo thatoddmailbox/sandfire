@@ -527,7 +527,8 @@ func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Cha
 	s.proxySSHWithInput(sshConn, channel, vmAddr, ptyReq, agentForwarding, input, state)
 }
 
-func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
+// dialVM opens an SSH client connection to a VM using the built-in credentials.
+func dialVM(vmAddr string) (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
 		User: vmUsername,
 		Auth: []ssh.AuthMethod{
@@ -535,8 +536,11 @@ func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel,
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
+	return ssh.Dial("tcp", vmAddr, config)
+}
 
-	client, err := ssh.Dial("tcp", vmAddr, config)
+func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
+	client, err := dialVM(vmAddr)
 	if err != nil {
 		fmt.Fprintf(channel, "Failed to connect to VM: %v\r\n", err)
 		return
@@ -708,15 +712,7 @@ func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmI
 }
 
 func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) bool {
-	config := &ssh.ClientConfig{
-		User: vmUsername,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(vmPassword),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	client, err := ssh.Dial("tcp", vmAddr, config)
+	client, err := dialVM(vmAddr)
 	if err != nil {
 		fmt.Fprintf(channel, "Failed to connect to VM: %v\r\n", err)
 		return false
