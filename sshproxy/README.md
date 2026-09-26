@@ -78,6 +78,43 @@ Welcome to Ubuntu 24.04 LTS
 sandfire@dev-server:~$
 ```
 
+## Targeting a VM by username (scp, rsync, sftp)
+
+Non-interactive tools like `scp`, `rsync`, and `sftp` run a single command and
+have no way to type `connect <vm-id>` at the menu. To support them, the proxy
+lets you pin a session to a specific VM by encoding the VM ID in the login
+username, using the form **`<user>+<vm-id>`**:
+
+- Everything before the `+` is your system user (used for key authentication).
+- Everything after the `+` is the target VM ID.
+
+With a VM pinned this way, the proxy connects you straight to that VM — no menu.
+This works for interactive shells and, more importantly, for file transfers:
+
+```bash
+# Interactive shell, straight into the VM (no menu):
+$ ssh -p 2222 alex+vm-abc123@localhost
+
+# Copy a file to the VM:
+$ scp -P 2222 ./data.tar.gz alex+vm-abc123@localhost:/tmp/
+
+# Copy a file from the VM:
+$ scp -P 2222 alex+vm-abc123@localhost:/var/log/app.log ./
+
+# Sync a directory with rsync:
+$ rsync -av -e 'ssh -p 2222' ./project/ alex+vm-abc123@localhost:/home/sandfire/project/
+
+# Interactive sftp:
+$ sftp -P 2222 alex+vm-abc123@localhost
+
+# Port forwarding with no shell (localhost:8080 -> port 80 on the VM):
+$ ssh -N -L 8080:localhost:80 -p 2222 alex+vm-abc123@localhost
+```
+
+Both the legacy (`scp -O`) and modern (sftp-subsystem) scp protocols are
+supported, as is `rsync` over ssh. Plain `ssh -p 2222 alex@localhost` (with no
+`+vm-id`) still drops you into the interactive menu as before.
+
 ## Authentication
 
 SSH Proxy authenticates users by:

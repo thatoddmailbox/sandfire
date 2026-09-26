@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,13 @@ type directTCPIPData struct {
 type connState struct {
 	mu       sync.Mutex
 	vmClient *ssh.Client
+
+	// targetVM is the VM pinned by a "user+vm-id" login, if any. fwdClient is a
+	// VM connection dialed on demand for port forwarding in pinned mode when no
+	// interactive session has set vmClient (e.g. "ssh -N -L ...").
+	targetVM  string
+	fwdMu     sync.Mutex
+	fwdClient *ssh.Client
 }
 
 // Server is the SSH proxy server
@@ -89,9 +97,33 @@ func (s *Server) Start() error {
 	}
 }
 
+// vmIDRegex matches Sandfire VM IDs like "vm-e2aa90c4".
+var vmIDRegex = regexp.MustCompile(`^vm-[a-f0-9]{8}$`)
+
+// parseLoginUser splits an SSH login username into the system user used for
+// authentication and an optional target VM ID. The format is "user+vm-id":
+// everything before the first '+' is the system user, everything after is the
+// target VM. If there is no '+', the whole string is the system user and the
+// target VM is empty (interactive-menu mode).
+func parseLoginUser(login string) (sysUser, targetVM string) {
+	if i := strings.IndexByte(login, '+'); i >= 0 {
+		return login[:i], login[i+1:]
+	}
+	return login, ""
+}
+
 // authenticatePublicKey validates the user's public key against their ~/.ssh/authorized_keys
 func (s *Server) authenticatePublicKey(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-	username := conn.User()
+	// The login may encode a target VM as "user+vm-id"; authenticate against
+	// the system user portion only.
+	username, targetVM := parseLoginUser(conn.User())
+
+	// The target VM ID is untrusted input that ends up in API request paths;
+	// reject anything that isn't a well-formed VM ID.
+	if targetVM != "" && !vmIDRegex.MatchString(targetVM) {
+		log.Printf("Auth failed for %s: invalid target VM ID %q", username, targetVM)
+		return nil, fmt.Errorf("invalid target VM ID")
+	}
 
 	// Look up the system user
 	u, err := user.Lookup(username)
@@ -131,10 +163,11 @@ func (s *Server) authenticatePublicKey(conn ssh.ConnMetadata, key ssh.PublicKey)
 
 		// Compare the keys
 		if bytes.Equal(authorizedKey.Marshal(), presentedKey) {
-			log.Printf("Auth successful for %s from %s", username, conn.RemoteAddr())
+			log.Printf("Auth successful for %s from %s (target VM: %q)", username, conn.RemoteAddr(), targetVM)
 			return &ssh.Permissions{
 				Extensions: map[string]string{
-					"username": username,
+					"username":  username,
+					"target_vm": targetVM,
 				},
 			}, nil
 		}
@@ -161,6 +194,16 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 
 	// Connection state for tracking VM client (for port forwarding)
 	state := &connState{}
+	if sshConn.Permissions != nil {
+		state.targetVM = sshConn.Permissions.Extensions["target_vm"]
+	}
+	defer func() {
+		state.fwdMu.Lock()
+		if state.fwdClient != nil {
+			state.fwdClient.Close()
+		}
+		state.fwdMu.Unlock()
+	}()
 
 	// Handle channels
 	for newChannel := range chans {
@@ -186,6 +229,13 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, requests <-chan *ssh.Request, state *connState) {
 	defer channel.Close()
 
+	// A login of the form "user+vm-id" pins this session to a specific VM,
+	// enabling non-interactive transfers (scp/rsync/sftp) and a direct shell.
+	targetVM := ""
+	if sshConn.Permissions != nil {
+		targetVM = sshConn.Permissions.Extensions["target_vm"]
+	}
+
 	var execCmd string
 	var ptyReq *ptyRequestMsg
 	var agentForwarding bool
@@ -205,12 +255,34 @@ func (s *Server) handleSession(sshConn *ssh.ServerConn, channel ssh.Channel, req
 			}
 			req.Reply(true, nil)
 			cmd := strings.TrimSpace(execCmd)
+			// When pinned to a VM, run the command directly on it (no PTY). This
+			// is what makes scp, rsync, and other remote commands work.
+			if targetVM != "" {
+				s.proxyExecToVM(channel, targetVM, cmd)
+				return
+			}
 			// Run the command and exit - direct exec mode should not fall into interactive shell
 			s.handleCommand(sshConn, channel, cmd, ptyReq, agentForwarding, requests, state)
 			return
 
+		case "subsystem":
+			// e.g. modern scp / sftp. Only meaningful when pinned to a VM.
+			subsystem := parseStringPayload(req.Payload)
+			if targetVM == "" {
+				req.Reply(false, nil)
+				continue
+			}
+			req.Reply(true, nil)
+			s.proxySubsystemToVM(channel, targetVM, subsystem)
+			return
+
 		case "shell":
 			req.Reply(true, nil)
+			// When pinned to a VM, drop the user straight into it instead of the menu.
+			if targetVM != "" {
+				s.handleConnect(sshConn, channel, targetVM, ptyReq, agentForwarding, requests, state)
+				return
+			}
 			s.handleInteractiveShell(sshConn, channel, ptyReq, agentForwarding, requests, state)
 			return
 
@@ -537,6 +609,26 @@ func dialVM(vmAddr string) (*ssh.Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	return ssh.Dial("tcp", vmAddr, config)
+}
+
+// resolveVMAddr looks up a VM by ID and returns its SSH address ("ip:22"),
+// validating that it exists and is running. On failure it returns an error with
+// a user-facing message.
+func (s *Server) resolveVMAddr(vmID string) (string, error) {
+	vm, err := s.apiClient.GetVM(vmID)
+	if err != nil {
+		return "", fmt.Errorf("error looking up VM: %v", err)
+	}
+	if vm == nil {
+		return "", fmt.Errorf("VM not found: %s", vmID)
+	}
+	if vm.State != "running" {
+		return "", fmt.Errorf("VM is not running (state: %s)", vm.State)
+	}
+	if vm.IPAddress == nil {
+		return "", fmt.Errorf("VM has no IP address assigned")
+	}
+	return fmt.Sprintf("%s:22", *vm.IPAddress), nil
 }
 
 func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
@@ -919,6 +1011,145 @@ func (s *Server) proxySSH(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr s
 	return true
 }
 
+// proxyExecToVM runs a single command on the target VM over a raw (no-PTY)
+// exec session, wiring the client channel straight to the VM session's stdio.
+// This is what makes scp (legacy -O), rsync, and other non-interactive remote
+// commands work. The remote command's real exit status is relayed to the client.
+func (s *Server) proxyExecToVM(channel ssh.Channel, vmID, command string) {
+	s.proxyNonInteractive(channel, vmID, func(session *ssh.Session) error {
+		return session.Start(command)
+	}, true)
+}
+
+// proxySubsystemToVM starts an SSH subsystem (e.g. sftp) on the target VM and
+// wires the client channel straight to it. This covers modern scp (which uses
+// the sftp subsystem) and the sftp client. Subsystems report failures in-band
+// via their own protocol and exit 0 on clean shutdown, so — like a real sshd —
+// we relay exit-status 0 once the streams drain rather than waiting on the
+// session (RequestSubsystem does not arm session.Wait anyway).
+func (s *Server) proxySubsystemToVM(channel ssh.Channel, vmID, subsystem string) {
+	s.proxyNonInteractive(channel, vmID, func(session *ssh.Session) error {
+		return session.RequestSubsystem(subsystem)
+	}, false)
+}
+
+// proxyNonInteractive dials the target VM, opens a session, wires the client
+// channel to the VM session's stdin/stdout/stderr with no PTY, starts the
+// remote work via start(), and relays the exit status back to the client.
+// Errors are written to the client's stderr stream so they don't corrupt the
+// stdout data stream that binary protocols (scp/rsync/sftp) rely on.
+func (s *Server) proxyNonInteractive(channel ssh.Channel, vmID string, start func(*ssh.Session) error, reapExit bool) {
+	vmAddr, err := s.resolveVMAddr(vmID)
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "%v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+
+	client, err := dialVM(vmAddr)
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to connect to VM: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to create session: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+	defer session.Close()
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to get stdin pipe: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to get stdout pipe: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to get stderr pipe: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+
+	if err := start(session); err != nil {
+		fmt.Fprintf(channel.Stderr(), "Failed to start remote command: %v\r\n", err)
+		sendExitStatus(channel, 1)
+		return
+	}
+
+	// client -> VM stdin. Unblocks when the client half-closes (scp/rsync/sftp
+	// all do at end of transfer) or when the channel is closed after we return.
+	go func() {
+		io.Copy(stdin, channel)
+		stdin.Close()
+	}()
+
+	// Drain both VM output streams fully before reaping the exit status: the ssh
+	// pipe contract requires all reads to finish before Wait().
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		io.Copy(channel, stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(channel.Stderr(), stderr)
+	}()
+	wg.Wait()
+
+	// exec sessions carry a real exit status via Wait(); subsystems don't (and
+	// report errors in-band), so relay 0 for them once the streams have drained.
+	code := uint32(0)
+	if reapExit {
+		code = exitCode(session.Wait())
+	}
+	sendExitStatus(channel, code)
+}
+
+// exitCode extracts the remote exit code from a session.Wait() error.
+func exitCode(waitErr error) uint32 {
+	if waitErr == nil {
+		return 0
+	}
+	if ee, ok := waitErr.(*ssh.ExitError); ok {
+		return uint32(ee.ExitStatus())
+	}
+	// Non-exit failure (e.g. killed by signal or transport error).
+	return 1
+}
+
+// sendExitStatus sends an SSH "exit-status" request on the channel so the
+// client learns the remote command's exit code. scp/rsync rely on this.
+func sendExitStatus(channel ssh.Channel, code uint32) {
+	payload := make([]byte, 4)
+	binary.BigEndian.PutUint32(payload, code)
+	channel.SendRequest("exit-status", false, payload)
+}
+
+// parseStringPayload decodes a single length-prefixed string from an SSH
+// request payload (e.g. the subsystem name in a "subsystem" request).
+func parseStringPayload(payload []byte) string {
+	if len(payload) < 4 {
+		return ""
+	}
+	n := binary.BigEndian.Uint32(payload[0:4])
+	if len(payload) < int(4+n) {
+		return ""
+	}
+	return string(payload[4 : 4+n])
+}
+
 // forwardAgentChannels handles auth-agent channel requests from the VM and forwards them to the client
 func (s *Server) forwardAgentChannels(vmClient *ssh.Client, clientConn *ssh.ServerConn, done <-chan struct{}) {
 	// Listen for auth-agent@openssh.com channels from the VM
@@ -1037,6 +1268,41 @@ func parseDirectTCPIPData(payload []byte) (*directTCPIPData, error) {
 	return data, nil
 }
 
+// pinnedForwardClient returns the connection's on-demand VM client for port
+// forwarding to the pinned VM, dialing it if needed. The client is shared by
+// all forwards on the SSH connection and closed when the connection ends.
+func (s *Server) pinnedForwardClient(state *connState) (*ssh.Client, error) {
+	state.fwdMu.Lock()
+	defer state.fwdMu.Unlock()
+
+	if state.fwdClient != nil {
+		return state.fwdClient, nil
+	}
+
+	vmAddr, err := s.resolveVMAddr(state.targetVM)
+	if err != nil {
+		return nil, err
+	}
+	client, err := dialVM(vmAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to VM: %v", err)
+	}
+	state.fwdClient = client
+
+	// If the VM connection drops (e.g. VM restarted), forget it so the next
+	// forward redials.
+	go func() {
+		client.Wait()
+		state.fwdMu.Lock()
+		if state.fwdClient == client {
+			state.fwdClient = nil
+		}
+		state.fwdMu.Unlock()
+	}()
+
+	return client, nil
+}
+
 // handleDirectTCPIP handles local port forwarding (-L) requests
 func (s *Server) handleDirectTCPIP(newChannel ssh.NewChannel, state *connState) {
 	// Parse the channel data to get destination
@@ -1053,6 +1319,17 @@ func (s *Server) handleDirectTCPIP(newChannel ssh.NewChannel, state *connState) 
 	state.mu.Lock()
 	vmClient := state.vmClient
 	state.mu.Unlock()
+
+	// In pinned mode ("user+vm-id"), forwarding works without an interactive
+	// session: dial the pinned VM on demand.
+	if vmClient == nil && state.targetVM != "" {
+		vmClient, err = s.pinnedForwardClient(state)
+		if err != nil {
+			log.Printf("Port forward rejected: %v", err)
+			newChannel.Reject(ssh.ConnectionFailed, err.Error())
+			return
+		}
+	}
 
 	if vmClient == nil {
 		log.Printf("Port forward rejected: no VM connection established (use 'connect <vm-id>' first)")
