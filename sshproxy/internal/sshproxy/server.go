@@ -571,31 +571,16 @@ func (s *Server) handleList(channel ssh.Channel) {
 // handleConnectWithInput handles connect command with input provided via channel
 func (s *Server) handleConnectWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
 	// Look up the VM
-	vm, err := s.apiClient.GetVM(vmID)
+	vm, err := s.lookupRunningVM(vmID)
 	if err != nil {
-		fmt.Fprintf(channel, "Error looking up VM: %v\r\n", err)
-		return
-	}
-
-	if vm == nil {
-		fmt.Fprintf(channel, "VM not found: %s\r\n", vmID)
-		return
-	}
-
-	if vm.State != "running" {
-		fmt.Fprintf(channel, "VM is not running (state: %s)\r\n", vm.State)
-		return
-	}
-
-	if vm.IPAddress == nil {
-		fmt.Fprintf(channel, "VM has no IP address assigned\r\n")
+		fmt.Fprintf(channel, "%v\r\n", err)
 		return
 	}
 
 	fmt.Fprintf(channel, "Connecting to %s (%s) at %s...\r\n", vm.Name, vm.ID, *vm.IPAddress)
 
 	// Connect to the VM's SSH server
-	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
+	vmAddr := vmSSHAddr(vm)
 	s.proxySSHWithInput(sshConn, channel, vmAddr, ptyReq, agentForwarding, input, state)
 }
 
@@ -611,24 +596,38 @@ func dialVM(vmAddr string) (*ssh.Client, error) {
 	return ssh.Dial("tcp", vmAddr, config)
 }
 
-// resolveVMAddr looks up a VM by ID and returns its SSH address ("ip:22"),
-// validating that it exists and is running. On failure it returns an error with
-// a user-facing message.
-func (s *Server) resolveVMAddr(vmID string) (string, error) {
+// lookupRunningVM looks up a VM by ID, validating that it exists, is running,
+// and has an IP address. On failure it returns an error with a user-facing
+// message.
+func (s *Server) lookupRunningVM(vmID string) (*VM, error) {
 	vm, err := s.apiClient.GetVM(vmID)
 	if err != nil {
-		return "", fmt.Errorf("error looking up VM: %v", err)
+		return nil, fmt.Errorf("Error looking up VM: %v", err)
 	}
 	if vm == nil {
-		return "", fmt.Errorf("VM not found: %s", vmID)
+		return nil, fmt.Errorf("VM not found: %s", vmID)
 	}
 	if vm.State != "running" {
-		return "", fmt.Errorf("VM is not running (state: %s)", vm.State)
+		return nil, fmt.Errorf("VM is not running (state: %s)", vm.State)
 	}
 	if vm.IPAddress == nil {
-		return "", fmt.Errorf("VM has no IP address assigned")
+		return nil, fmt.Errorf("VM has no IP address assigned")
 	}
-	return fmt.Sprintf("%s:22", *vm.IPAddress), nil
+	return vm, nil
+}
+
+// vmSSHAddr returns the SSH address ("ip:22") of a VM that has an IP address.
+func vmSSHAddr(vm *VM) string {
+	return fmt.Sprintf("%s:22", *vm.IPAddress)
+}
+
+// resolveVMAddr looks up a running VM by ID and returns its SSH address.
+func (s *Server) resolveVMAddr(vmID string) (string, error) {
+	vm, err := s.lookupRunningVM(vmID)
+	if err != nil {
+		return "", err
+	}
+	return vmSSHAddr(vm), nil
 }
 
 func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel, vmAddr string, ptyReq *ptyRequestMsg, agentForwarding bool, input <-chan []byte, state *connState) {
@@ -770,24 +769,9 @@ func (s *Server) proxySSHWithInput(sshConn *ssh.ServerConn, channel ssh.Channel,
 // handleConnect returns true if a connection was established (session should end after)
 func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmID string, ptyReq *ptyRequestMsg, agentForwarding bool, requests <-chan *ssh.Request, state *connState) bool {
 	// Look up the VM
-	vm, err := s.apiClient.GetVM(vmID)
+	vm, err := s.lookupRunningVM(vmID)
 	if err != nil {
-		fmt.Fprintf(channel, "Error looking up VM: %v\r\n", err)
-		return false
-	}
-
-	if vm == nil {
-		fmt.Fprintf(channel, "VM not found: %s\r\n", vmID)
-		return false
-	}
-
-	if vm.State != "running" {
-		fmt.Fprintf(channel, "VM is not running (state: %s)\r\n", vm.State)
-		return false
-	}
-
-	if vm.IPAddress == nil {
-		fmt.Fprintf(channel, "VM has no IP address assigned\r\n")
+		fmt.Fprintf(channel, "%v\r\n", err)
 		return false
 	}
 
@@ -799,7 +783,7 @@ func (s *Server) handleConnect(sshConn *ssh.ServerConn, channel ssh.Channel, vmI
 	fmt.Fprintf(channel, "Connecting to %s (%s) at %s...\r\n", vm.Name, vm.ID, *vm.IPAddress)
 
 	// Connect to the VM's SSH server
-	vmAddr := fmt.Sprintf("%s:22", *vm.IPAddress)
+	vmAddr := vmSSHAddr(vm)
 	return s.proxySSH(sshConn, channel, vmAddr, ptyReq, agentForwarding, requests, state)
 }
 
