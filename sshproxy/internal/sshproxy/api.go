@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -61,7 +62,7 @@ func (c *APIClient) ListVMs() ([]VM, error) {
 
 // GetVM returns a specific VM by ID
 func (c *APIClient) GetVM(id string) (*VM, error) {
-	resp, err := c.httpClient.Get(c.baseURL + "/api/vms/" + id)
+	resp, err := c.httpClient.Get(c.baseURL + "/api/vms/" + url.PathEscape(id))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VM: %w", err)
 	}
