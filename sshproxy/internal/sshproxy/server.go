@@ -25,20 +25,20 @@ const (
 
 // ptyRequestMsg contains the parsed PTY request data
 type ptyRequestMsg struct {
-	Term     string
-	Columns  uint32
-	Rows     uint32
-	Width    uint32
-	Height   uint32
-	Modes    ssh.TerminalModes
+	Term    string
+	Columns uint32
+	Rows    uint32
+	Width   uint32
+	Height  uint32
+	Modes   ssh.TerminalModes
 }
 
 // directTCPIPData contains the data from a direct-tcpip channel open request
 type directTCPIPData struct {
-	DestHost   string
-	DestPort   uint32
-	OrigHost   string
-	OrigPort   uint32
+	DestHost string
+	DestPort uint32
+	OrigHost string
+	OrigPort uint32
 }
 
 // connState tracks per-connection state including the VM client for port forwarding
