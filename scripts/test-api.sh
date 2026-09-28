@@ -4,7 +4,7 @@ set -e
 # Sandfire API Test Script
 # Tests the full VM lifecycle through the API
 
-API_URL="${API_URL:-http://localhost:9000}"
+API_URL="${SANDFIRE_API:-http://localhost:9000}"
 VM_NAME="test-vm-$$"
 
 RED='\033[0;31m'
