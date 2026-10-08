@@ -379,6 +379,7 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 		return "", "", fmt.Errorf("start VM: %w", err)
 	}
 
+	proc.IPAddress = ipAddress
 	m.processes[vm.ID] = proc
 	log.Printf("Started VM %s with IP %s on %s", vm.ID, ipAddress, tapDevice)
 	log.Printf("Serial output for VM %s logged to: %s/vms/%s/serial.log", vm.ID, m.dataDir, vm.ID)
@@ -404,6 +405,8 @@ func (m *Manager) StopVM(vmID string) error {
 	if err := m.networkMgr.DeleteTap(tapDevice); err != nil {
 		log.Printf("Warning: error deleting tap device %s: %v", tapDevice, err)
 	}
+
+	m.networkMgr.ReleaseIP(proc.IPAddress)
 
 	// Clean up runtime directories
 	if m.useJailer {
@@ -461,6 +464,7 @@ func (m *Manager) StopAllVMs() {
 		}
 		tapDevice := "tap-" + vmID
 		m.networkMgr.DeleteTap(tapDevice)
+		m.networkMgr.ReleaseIP(proc.IPAddress)
 		if m.useJailer {
 			m.cleanupJailDir(vmID)
 		} else {

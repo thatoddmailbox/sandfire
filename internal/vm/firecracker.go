@@ -19,6 +19,7 @@ type FirecrackerProcess struct {
 	Cmd        *exec.Cmd
 	SocketPath string
 	JailPath   string
+	IPAddress  string
 	SerialLog  *os.File
 	waitDone   chan struct{}
 	waitErr    error
