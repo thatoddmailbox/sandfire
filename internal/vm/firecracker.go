@@ -41,9 +41,9 @@ func (p *FirecrackerProcess) waitForSocket(timeout time.Duration) error {
 		select {
 		case <-p.waitDone:
 			if p.waitErr != nil {
-				return fmt.Errorf("jailer process exited: %w", p.waitErr)
+				return fmt.Errorf("firecracker process exited: %w", p.waitErr)
 			}
-			return fmt.Errorf("jailer process exited unexpectedly")
+			return fmt.Errorf("firecracker process exited unexpectedly")
 		default:
 		}
 
