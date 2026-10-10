@@ -327,7 +327,7 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 		}
 
 		// Wait for socket
-		if err := proc.waitForSocket(10 * 1e9); err != nil {
+		if err := proc.waitForSocket(10 * time.Second); err != nil {
 			proc.stop()
 			m.networkMgr.DeleteTap(tapDevice)
 			m.networkMgr.ReleaseIP(ipAddress)
