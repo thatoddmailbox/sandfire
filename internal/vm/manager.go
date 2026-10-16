@@ -148,7 +148,7 @@ func (m *Manager) processExists(pid int) bool {
 // but not properly cleaned up
 func (m *Manager) cleanOrphanedTapDevices() {
 	// Get all interfaces attached to the sandfire bridge
-	cmd := exec.Command("ip", "link", "show", "master", "sandfire0")
+	cmd := exec.Command("ip", "link", "show", "master", network.BridgeName)
 	output, err := cmd.Output()
 	if err != nil {
 		// Bridge might not exist yet
