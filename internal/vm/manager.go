@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"sandfire/internal/db"
 	"sandfire/internal/network"
+	"sandfire/internal/storage"
 )
 
 type Manager struct {
@@ -31,6 +33,9 @@ type Manager struct {
 
 	mu        sync.RWMutex
 	processes map[string]*FirecrackerProcess
+	// diskBusy holds IDs of stopped VMs whose disk is being modified, so they
+	// can't be started until the operation finishes.
+	diskBusy map[string]bool
 }
 
 func NewManager(dataDir, baseDomain string, networkMgr *network.Manager) *Manager {
@@ -49,6 +54,7 @@ func NewManager(dataDir, baseDomain string, networkMgr *network.Manager) *Manage
 		networkMgr:      networkMgr,
 		baseDomain:      baseDomain,
 		processes:       make(map[string]*FirecrackerProcess),
+		diskBusy:        make(map[string]bool),
 	}
 }
 
@@ -256,6 +262,9 @@ func (m *Manager) StartVM(vm *db.VM, img *db.OSImage, vmContext json.RawMessage)
 	if _, exists := m.processes[vm.ID]; exists {
 		return "", "", fmt.Errorf("VM %s is already running", vm.ID)
 	}
+	if m.diskBusy[vm.ID] {
+		return "", "", fmt.Errorf("VM %s: %w", vm.ID, ErrDiskBusy)
+	}
 
 	// Allocate IP address
 	ipAddress, err = m.networkMgr.AllocateIP()
@@ -423,15 +432,99 @@ func (m *Manager) StopVM(vmID string) error {
 }
 
 func (m *Manager) CleanupVM(vmID string) error {
+	unlock, err := m.lockDisk(vmID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	vmDir := filepath.Join(m.dataDir, "vms", vmID)
 	return os.RemoveAll(vmDir)
 }
 
-// ResetVMDisk replaces the VM's rootfs with a fresh copy from the base OS image.
+func (m *Manager) vmRootfsPath(vmID string) string {
+	return filepath.Join(m.dataDir, "vms", vmID, "rootfs.ext4")
+}
+
+var (
+	// ErrVMRunning is returned when a disk operation is attempted on a running VM.
+	ErrVMRunning = errors.New("VM is running")
+	// ErrDiskBusy is returned when another operation is already using the VM's disk.
+	ErrDiskBusy = errors.New("VM disk is already being modified")
+)
+
+// lockDisk marks a stopped VM's disk as busy so the VM can't be started (or
+// have another disk operation run) until the returned function is called.
+func (m *Manager) lockDisk(vmID string) (unlock func(), err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.processes[vmID]; exists {
+		return nil, fmt.Errorf("VM %s: %w", vmID, ErrVMRunning)
+	}
+	if m.diskBusy[vmID] {
+		return nil, fmt.Errorf("VM %s: %w", vmID, ErrDiskBusy)
+	}
+	m.diskBusy[vmID] = true
+
+	return func() {
+		m.mu.Lock()
+		delete(m.diskBusy, vmID)
+		m.mu.Unlock()
+	}, nil
+}
+
+// VMDiskSizeGB returns the size of the VM's rootfs image file in GiB, rounded up.
+func (m *Manager) VMDiskSizeGB(vmID string) (int, error) {
+	st, err := os.Stat(m.vmRootfsPath(vmID))
+	if err != nil {
+		return 0, err
+	}
+	return int((st.Size() + storage.GiB - 1) / storage.GiB), nil
+}
+
+// InspectVMDisk reports the size, usage and minimum size of a stopped VM's disk.
+func (m *Manager) InspectVMDisk(vmID string) (*storage.Ext4Info, error) {
+	unlock, err := m.lockDisk(vmID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	return storage.InspectExt4(m.vmRootfsPath(vmID))
+}
+
+// ResizeVMDisk grows or shrinks a stopped VM's disk to sizeBytes.
+func (m *Manager) ResizeVMDisk(vmID string, sizeBytes int64) error {
+	unlock, err := m.lockDisk(vmID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := storage.ResizeExt4(m.vmRootfsPath(vmID), sizeBytes); err != nil {
+		return err
+	}
+	log.Printf("Resized disk for VM %s to %d bytes", vmID, sizeBytes)
+	return nil
+}
+
+// ResetVMDisk replaces the VM's rootfs with a fresh copy from the base OS image,
+// keeping the disk's current size if it is larger than the image's.
 // The VM must be stopped before calling this method.
 func (m *Manager) ResetVMDisk(vmID string, img *db.OSImage) error {
-	vmDir := filepath.Join(m.dataDir, "vms", vmID)
-	dstRootfs := filepath.Join(vmDir, "rootfs.ext4")
+	unlock, err := m.lockDisk(vmID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	dstRootfs := m.vmRootfsPath(vmID)
+
+	var oldSize int64
+	if st, err := os.Stat(dstRootfs); err == nil {
+		oldSize = st.Size()
+	}
 
 	// Remove the existing rootfs
 	if err := os.Remove(dstRootfs); err != nil && !os.IsNotExist(err) {
@@ -447,6 +540,12 @@ func (m *Manager) ResetVMDisk(vmID string, img *db.OSImage) error {
 	// Make writable
 	if err := os.Chmod(dstRootfs, 0644); err != nil {
 		return fmt.Errorf("chmod rootfs: %w", err)
+	}
+
+	if st, err := os.Stat(dstRootfs); err == nil && oldSize > st.Size() {
+		if err := storage.ResizeExt4(dstRootfs, oldSize); err != nil {
+			return fmt.Errorf("restore disk size: %w", err)
+		}
 	}
 
 	log.Printf("Reset disk for VM %s from image %s", vmID, img.ID)
