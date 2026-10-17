@@ -2,9 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 
 	"sandfire/internal/db"
+	"sandfire/internal/storage"
+	"sandfire/internal/vm"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +207,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request) {
 
 	// Clean up VM resources
 	if err := s.vmManager.CleanupVM(id); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to cleanup VM: "+err.Error())
+		writeError(w, diskErrorStatus(err), "failed to cleanup VM: "+err.Error())
 		return
 	}
 
@@ -257,9 +261,96 @@ func (s *Server) handleResetVMDisk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.vmManager.ResetVMDisk(id, img); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to reset VM disk: "+err.Error())
+		writeError(w, diskErrorStatus(err), "failed to reset VM disk: "+err.Error())
 		return
 	}
+	s.syncDiskSize(id)
+
+	vm, _ = s.db.GetVM(id)
+	writeJSON(w, http.StatusOK, vm)
+}
+
+// diskErrorStatus returns the HTTP status for an error from a VM disk operation.
+func diskErrorStatus(err error) int {
+	if errors.Is(err, vm.ErrVMRunning) || errors.Is(err, vm.ErrDiskBusy) {
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
+}
+
+// syncDiskSize updates the VM's recorded disk size from its rootfs file.
+func (s *Server) syncDiskSize(id string) {
+	sizeGB, err := s.vmManager.VMDiskSizeGB(id)
+	if err != nil {
+		log.Printf("Warning: failed to get disk size for VM %s: %v", id, err)
+		return
+	}
+	if err := s.db.UpdateVMDiskSize(id, sizeGB); err != nil {
+		log.Printf("Warning: failed to record disk size for VM %s: %v", id, err)
+	}
+}
+
+func (s *Server) handleGetVMDisk(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	vm, err := s.db.GetVM(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if vm == nil {
+		writeError(w, http.StatusNotFound, "vm not found")
+		return
+	}
+	if vm.State != "stopped" {
+		writeError(w, http.StatusBadRequest, "vm must be stopped to inspect disk")
+		return
+	}
+
+	info, err := s.vmManager.InspectVMDisk(id)
+	if err != nil {
+		writeError(w, diskErrorStatus(err), "failed to inspect VM disk: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+type resizeVMDiskRequest struct {
+	SizeGB int `json:"size_gb"`
+}
+
+func (s *Server) handleResizeVMDisk(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	vm, err := s.db.GetVM(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if vm == nil {
+		writeError(w, http.StatusNotFound, "vm not found")
+		return
+	}
+	if vm.State != "stopped" {
+		writeError(w, http.StatusBadRequest, "vm must be stopped to resize disk")
+		return
+	}
+
+	var req resizeVMDiskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.SizeGB <= 0 {
+		writeError(w, http.StatusBadRequest, "size_gb must be a positive number")
+		return
+	}
+
+	if err := s.vmManager.ResizeVMDisk(id, int64(req.SizeGB)*storage.GiB); err != nil {
+		writeError(w, diskErrorStatus(err), "failed to resize VM disk: "+err.Error())
+		return
+	}
+	s.syncDiskSize(id)
 
 	vm, _ = s.db.GetVM(id)
 	writeJSON(w, http.StatusOK, vm)
@@ -312,7 +403,7 @@ func (s *Server) handleStartVM(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress, tapDevice, err := s.vmManager.StartVM(vm, img, req.Context)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to start VM: "+err.Error())
+		writeError(w, diskErrorStatus(err), "failed to start VM: "+err.Error())
 		return
 	}
 

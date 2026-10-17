@@ -47,6 +47,16 @@ Delete a VM (must be stopped first).
 ./delete-vm.sh vm-abc12345
 ```
 
+### resize-vm-disk.sh
+Resize a VM's disk (must be stopped). Omit the size to show current size, usage and the minimum size it can be shrunk to.
+```bash
+./resize-vm-disk.sh <vm-id> [size_gb]
+
+# Examples:
+./resize-vm-disk.sh vm-abc12345       # show disk size and usage
+./resize-vm-disk.sh vm-abc12345 32    # resize to 32 GB
+```
+
 ## Configuration
 
 Set `SANDFIRE_API` environment variable to use a different API endpoint:

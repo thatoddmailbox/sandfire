@@ -55,6 +55,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/vms/{id}/start", s.handleStartVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/stop", s.handleStopVM)
 	s.mux.HandleFunc("POST /api/vms/{id}/reset-disk", s.handleResetVMDisk)
+	s.mux.HandleFunc("GET /api/vms/{id}/disk", s.handleGetVMDisk)
+	s.mux.HandleFunc("POST /api/vms/{id}/resize-disk", s.handleResizeVMDisk)
 	s.mux.HandleFunc("GET /api/vms/{id}/vnc", s.handleVNCWebSocket)
 }
 
