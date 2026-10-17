@@ -185,6 +185,7 @@ const indexHTML = `<!DOCTYPE html>
             max-width: 90%;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
+        .modal-fixed { width: 400px; }
         .modal h3 {
             color: #d4470a;
             margin-bottom: 15px;
@@ -197,6 +198,22 @@ const indexHTML = `<!DOCTYPE html>
         }
         .btn-cancel { background: #6b7280; color: #fff; }
         .btn-save { background: #d4470a; color: #fff; }
+        .form-group input[readonly] { background: #f5f5f5; color: #666; }
+        .disk-stats {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 6px 16px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        .disk-stats dt { color: #666; }
+        .disk-note {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        .disk-note-warn { background: #fef3c7; color: #92400e; }
     </style>
 </head>
 <body>
@@ -273,8 +290,36 @@ const indexHTML = `<!DOCTYPE html>
         </div>
     </div>
 
+    <div id="resize-modal" class="modal-overlay">
+        <div class="modal modal-fixed">
+            <h3>Resize Disk</h3>
+            <form id="resize-form">
+                <input type="hidden" id="resize-vm-id">
+                <p id="resize-loading" style="color:#666">Inspecting disk...</p>
+                <div id="resize-body" style="display:none">
+                    <dl class="disk-stats">
+                        <dt>VM</dt><dd id="resize-vm-name"></dd>
+                        <dt>Current size</dt><dd id="resize-current"></dd>
+                        <dt>Used</dt><dd id="resize-used"></dd>
+                        <dt>Minimum size</dt><dd id="resize-min"></dd>
+                    </dl>
+                    <div class="form-group">
+                        <label for="resize-size">New size (GB)</label>
+                        <input type="number" id="resize-size" min="1" step="1" required>
+                    </div>
+                    <div id="resize-note" class="disk-note" style="display:none"></div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeResizeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-save" id="resize-submit" disabled>Resize</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API = '/api';
+        const GiB = 1024 * 1024 * 1024;
         let osImages = {};
 
         async function fetchJSON(url, options = {}) {
@@ -374,6 +419,7 @@ const indexHTML = `<!DOCTYPE html>
                     html += '<button class="btn btn-more" onclick="toggleDropdown(event, \'' + vm.id + '\')">More</button>';
                     html += '<div id="dropdown-' + vm.id + '" class="dropdown-content">';
                     html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ')">Edit</button>';
+                    html += '<button class="dropdown-item" onclick="openResizeModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Resize Disk</button>';
                     html += '<button class="dropdown-item danger" onclick="resetVMDisk(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Reset Disk</button>';
                     html += '<button class="dropdown-item danger" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
                     html += '</div></div>';
@@ -478,6 +524,106 @@ const indexHTML = `<!DOCTYPE html>
         // Close edit modal when clicking overlay
         document.getElementById('edit-modal').addEventListener('click', (e) => {
             if (e.target.id === 'edit-modal') closeEditModal();
+        });
+
+        let resizeDisk = null;
+
+        function formatGB(bytes) {
+            return (bytes / GiB).toFixed(1) + ' GB';
+        }
+
+        async function openResizeModal(id, name) {
+            closeAllDropdowns();
+            resizeDisk = null;
+            document.getElementById('resize-vm-id').value = id;
+            document.getElementById('resize-vm-name').textContent = name;
+            document.getElementById('resize-loading').textContent = 'Inspecting disk...';
+            document.getElementById('resize-loading').style.display = '';
+            document.getElementById('resize-body').style.display = 'none';
+            document.getElementById('resize-submit').disabled = true;
+            document.getElementById('resize-modal').classList.add('show');
+
+            try {
+                const info = await fetchJSON(API + '/vms/' + id + '/disk');
+                if (document.getElementById('resize-vm-id').value !== id) return;
+                resizeDisk = info;
+                const minGB = Math.max(1, Math.ceil(info.min_size_bytes / GiB));
+                document.getElementById('resize-current').textContent = formatGB(info.size_bytes);
+                document.getElementById('resize-used').textContent = formatGB(info.used_bytes) + ' (' + Math.round(100 * info.used_bytes / info.size_bytes) + '%)';
+                document.getElementById('resize-min').textContent = minGB + ' GB';
+                const input = document.getElementById('resize-size');
+                input.min = minGB;
+                input.value = Math.ceil(info.size_bytes / GiB);
+                document.getElementById('resize-loading').style.display = 'none';
+                document.getElementById('resize-body').style.display = '';
+                updateResizeNote();
+                input.focus();
+            } catch (e) {
+                document.getElementById('resize-loading').textContent = 'Failed to inspect disk: ' + e.message;
+            }
+        }
+
+        function closeResizeModal() {
+            document.getElementById('resize-modal').classList.remove('show');
+            resizeDisk = null;
+        }
+
+        function updateResizeNote() {
+            const note = document.getElementById('resize-note');
+            const submit = document.getElementById('resize-submit');
+            const input = document.getElementById('resize-size');
+            const newGB = parseInt(input.value);
+            const newBytes = newGB * GiB;
+            submit.disabled = true;
+            note.style.display = 'none';
+            if (!resizeDisk || !(newBytes > 0)) return;
+
+            note.style.display = '';
+            if (newBytes < resizeDisk.min_size_bytes) {
+                note.className = 'disk-note disk-note-warn';
+                note.textContent = 'Too small: the filesystem needs at least ' + input.min + ' GB.';
+            } else if (newGB === Math.ceil(resizeDisk.size_bytes / GiB)) {
+                // The input starts at the current size rounded up to whole GB,
+                // so treat that as unchanged even if the disk is slightly smaller.
+                note.style.display = 'none';
+            } else if (newBytes > resizeDisk.size_bytes) {
+                note.style.display = 'none';
+                submit.disabled = false;
+            } else {
+                note.className = 'disk-note disk-note-warn';
+                note.textContent = 'Shrinking moves data around inside the filesystem and may take a while.';
+                submit.disabled = false;
+            }
+        }
+
+        document.getElementById('resize-size').addEventListener('input', updateResizeNote);
+
+        document.getElementById('resize-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('resize-vm-id').value;
+            const sizeGB = parseInt(document.getElementById('resize-size').value);
+            const btn = document.getElementById('resize-submit');
+            btn.disabled = true;
+            btn.textContent = 'Resizing...';
+            setLoading(id, true);
+
+            try {
+                await fetchJSON(API + '/vms/' + id + '/resize-disk', {
+                    method: 'POST',
+                    body: JSON.stringify({ size_gb: sizeGB })
+                });
+                closeResizeModal();
+            } catch (err) {
+                showError('Failed to resize VM disk: ' + err.message);
+                btn.disabled = false;
+            } finally {
+                btn.textContent = 'Resize';
+                await loadVMs();
+            }
+        });
+
+        document.getElementById('resize-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'resize-modal' && document.getElementById('resize-submit').textContent !== 'Resizing...') closeResizeModal();
         });
 
         function toggleDropdown(event, vmId) {
