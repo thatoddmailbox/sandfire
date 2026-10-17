@@ -114,6 +114,9 @@ Use the scripts in scripts/ to interact with the server.`)
 		networkMgr.SetAllocatedIPs(allocatedIPs)
 	}
 
+	// Record actual disk sizes, in case disks were resized outside of sandfire
+	syncDiskSizes(database, vmManager)
+
 	// Restore previously running VMs
 	restoreRunningVMs(database, vmManager)
 
@@ -186,6 +189,28 @@ Use the scripts in scripts/ to interact with the server.`)
 
 	<-done
 	log.Println("Sandfire stopped")
+}
+
+// syncDiskSizes updates each VM's recorded disk size from its rootfs file.
+func syncDiskSizes(database *db.DB, vmManager *vm.Manager) {
+	vms, err := database.ListVMs()
+	if err != nil {
+		log.Printf("Warning: failed to list VMs for disk size sync: %v", err)
+		return
+	}
+
+	for _, v := range vms {
+		sizeGB, err := vmManager.VMDiskSizeGB(v.ID)
+		if err != nil {
+			log.Printf("Warning: failed to get disk size for VM %s: %v", v.ID, err)
+			continue
+		}
+		if sizeGB != v.DiskSizeGB {
+			if err := database.UpdateVMDiskSize(v.ID, sizeGB); err != nil {
+				log.Printf("Warning: failed to record disk size for VM %s: %v", v.ID, err)
+			}
+		}
+	}
 }
 
 func restoreRunningVMs(database *db.DB, vmManager *vm.Manager) {

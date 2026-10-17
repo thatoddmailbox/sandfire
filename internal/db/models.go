@@ -157,14 +157,23 @@ func (db *DB) CreateVM(name, osImageID string, ramMB, diskSizeGB, vcpuCount int,
 	return db.GetVM(id)
 }
 
-func (db *DB) UpdateVM(id string, name string, ramMB, diskSizeGB, vcpuCount int, internetEnabled bool) (*VM, error) {
-	_, err := db.Exec(`UPDATE vms SET name = ?, ram_mb = ?, disk_size_gb = ?, vcpu_count = ?,
+func (db *DB) UpdateVM(id string, name string, ramMB, vcpuCount int, internetEnabled bool) (*VM, error) {
+	_, err := db.Exec(`UPDATE vms SET name = ?, ram_mb = ?, vcpu_count = ?,
 		internet_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND state = 'stopped'`,
-		name, ramMB, diskSizeGB, vcpuCount, internetEnabled, id)
+		name, ramMB, vcpuCount, internetEnabled, id)
 	if err != nil {
 		return nil, fmt.Errorf("update vm: %w", err)
 	}
 	return db.GetVM(id)
+}
+
+func (db *DB) UpdateVMDiskSize(id string, diskSizeGB int) error {
+	_, err := db.Exec(`UPDATE vms SET disk_size_gb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		diskSizeGB, id)
+	if err != nil {
+		return fmt.Errorf("update vm disk size: %w", err)
+	}
+	return nil
 }
 
 func (db *DB) UpdateVMState(id, state string, ipAddress, tapDevice *string) error {

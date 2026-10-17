@@ -39,7 +39,6 @@ type createVMRequest struct {
 	Name            string `json:"name"`
 	OSImageID       string `json:"os_image_id"`
 	RamMB           int    `json:"ram_mb"`
-	DiskSizeGB      int    `json:"disk_size_gb"`
 	VCPUCount       int    `json:"vcpu_count"`
 	InternetEnabled bool   `json:"internet_enabled"`
 }
@@ -86,14 +85,11 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	if req.RamMB == 0 {
 		req.RamMB = 512
 	}
-	if req.DiskSizeGB == 0 {
-		req.DiskSizeGB = 8
-	}
 	if req.VCPUCount == 0 {
 		req.VCPUCount = 1
 	}
 
-	vm, err := s.db.CreateVM(req.Name, req.OSImageID, req.RamMB, req.DiskSizeGB, req.VCPUCount, true)
+	vm, err := s.db.CreateVM(req.Name, req.OSImageID, req.RamMB, img.RootfsSizeGB, req.VCPUCount, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -105,7 +101,9 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to prepare VM disk: "+err.Error())
 		return
 	}
+	s.syncDiskSize(vm.ID)
 
+	vm, _ = s.db.GetVM(vm.ID)
 	writeJSON(w, http.StatusCreated, vm)
 }
 
@@ -126,7 +124,6 @@ func (s *Server) handleGetVM(w http.ResponseWriter, r *http.Request) {
 type updateVMRequest struct {
 	Name            string `json:"name"`
 	RamMB           int    `json:"ram_mb"`
-	DiskSizeGB      int    `json:"disk_size_gb"`
 	VCPUCount       int    `json:"vcpu_count"`
 	InternetEnabled bool   `json:"internet_enabled"`
 }
@@ -175,14 +172,11 @@ func (s *Server) handleUpdateVM(w http.ResponseWriter, r *http.Request) {
 	if req.RamMB == 0 {
 		req.RamMB = existing.RamMB
 	}
-	if req.DiskSizeGB == 0 {
-		req.DiskSizeGB = existing.DiskSizeGB
-	}
 	if req.VCPUCount == 0 {
 		req.VCPUCount = existing.VCPUCount
 	}
 
-	vm, err := s.db.UpdateVM(id, req.Name, req.RamMB, req.DiskSizeGB, req.VCPUCount, true)
+	vm, err := s.db.UpdateVM(id, req.Name, req.RamMB, req.VCPUCount, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

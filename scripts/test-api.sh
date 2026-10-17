@@ -80,7 +80,6 @@ RESPONSE=$(curl -s -X POST "${API_URL}/api/vms" \
         \"name\": \"${VM_NAME}\",
         \"os_image_id\": \"${OS_IMAGE_ID}\",
         \"ram_mb\": 512,
-        \"disk_size_gb\": 2,
         \"vcpu_count\": 1,
         \"internet_enabled\": true
     }")

@@ -33,11 +33,12 @@ Content-Type: application/json
   "name": "my-vm",
   "os_image_id": "ubuntu-24.04",
   "ram_mb": 1024,
-  "disk_size_gb": 10,
   "vcpu_count": 2,
   "internet_enabled": true
 }
 ```
+
+The VM's disk starts at the size of the OS image's rootfs.
 
 ## Get VM
 

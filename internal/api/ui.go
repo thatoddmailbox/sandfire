@@ -232,7 +232,7 @@ const indexHTML = `<!DOCTYPE html>
                     </div>
                     <div class="form-group">
                         <label for="disk_size_gb">Disk (GB)</label>
-                        <input type="number" id="disk_size_gb" name="disk_size_gb" value="8" min="1">
+                        <input type="text" id="disk_size_gb" placeholder="From OS image" readonly title="Disks start at the OS image's size. Use Resize Disk afterwards to change it.">
                     </div>
                     <div class="form-group">
                         <label for="vcpu_count">vCPUs</label>
@@ -251,7 +251,6 @@ const indexHTML = `<!DOCTYPE html>
             <h3>Edit VM</h3>
             <form id="edit-form">
                 <input type="hidden" id="edit-vm-id">
-                <input type="hidden" id="edit-disk-size">
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="edit-name">Name</label>
@@ -324,7 +323,7 @@ const indexHTML = `<!DOCTYPE html>
         document.getElementById('os_image_id').addEventListener('change', function() {
             const img = osImages[this.value];
             if (img) {
-                document.getElementById('disk_size_gb').value = img.rootfs_size_gb;
+                document.getElementById('disk_size_gb').value = img.rootfs_size_gb + ' GB';
                 document.getElementById('ram_mb').value = img.suggested_ram_mb;
             }
         });
@@ -374,7 +373,7 @@ const indexHTML = `<!DOCTYPE html>
                     html += '<div class="dropdown">';
                     html += '<button class="btn btn-more" onclick="toggleDropdown(event, \'' + vm.id + '\')">More</button>';
                     html += '<div id="dropdown-' + vm.id + '" class="dropdown-content">';
-                    html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ', ' + vm.disk_size_gb + ')">Edit</button>';
+                    html += '<button class="dropdown-item" onclick="openEditModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + vm.vcpu_count + ', ' + vm.ram_mb + ')">Edit</button>';
                     html += '<button class="dropdown-item danger" onclick="resetVMDisk(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Reset Disk</button>';
                     html += '<button class="dropdown-item danger" onclick="deleteVM(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')">Delete</button>';
                     html += '</div></div>';
@@ -435,13 +434,12 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
-        function openEditModal(id, name, vcpu, ram, diskSize) {
+        function openEditModal(id, name, vcpu, ram) {
             closeAllDropdowns();
             document.getElementById('edit-vm-id').value = id;
             document.getElementById('edit-name').value = name;
             document.getElementById('edit-vcpu').value = vcpu;
             document.getElementById('edit-ram').value = ram;
-            document.getElementById('edit-disk-size').value = diskSize;
             document.getElementById('edit-modal').classList.add('show');
         }
 
@@ -455,7 +453,6 @@ const indexHTML = `<!DOCTYPE html>
             const name = document.getElementById('edit-name').value;
             const vcpu = parseInt(document.getElementById('edit-vcpu').value);
             const ram = parseInt(document.getElementById('edit-ram').value);
-            const diskSize = parseInt(document.getElementById('edit-disk-size').value);
             const btn = e.target.querySelector('button[type="submit"]');
             btn.disabled = true;
 
@@ -466,7 +463,6 @@ const indexHTML = `<!DOCTYPE html>
                         name: name,
                         vcpu_count: vcpu,
                         ram_mb: ram,
-                        disk_size_gb: diskSize,
                         internet_enabled: true
                     })
                 });
@@ -539,7 +535,6 @@ const indexHTML = `<!DOCTYPE html>
                 name: form.name.value,
                 os_image_id: form.os_image_id.value,
                 ram_mb: parseInt(form.ram_mb.value) || 1024,
-                disk_size_gb: parseInt(form.disk_size_gb.value) || 8,
                 vcpu_count: parseInt(form.vcpu_count.value) || 1,
                 internet_enabled: true
             };
@@ -551,7 +546,6 @@ const indexHTML = `<!DOCTYPE html>
                 });
                 form.reset();
                 form.ram_mb.value = '512';
-                form.disk_size_gb.value = '8';
                 form.vcpu_count.value = '1';
                 await loadVMs();
             } catch (e) {
