@@ -66,6 +66,7 @@ ln -sf "${CLAUDE_VERSIONS_DIR}/${version}" "${CLAUDE_BIN_DIR}/claude"
 # Create alias to add --dangerously-skip-permissions for isolated VM environment
 cat > /etc/profile.d/claude-alias.sh << 'EOF'
 alias claude='claude --dangerously-skip-permissions'
+export CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS=1
 EOF
 chmod 644 /etc/profile.d/claude-alias.sh
 
